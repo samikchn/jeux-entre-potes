@@ -35,7 +35,10 @@ L'hôte choisit la composition avant la partie (ou prend la composition conseill
 La description de chaque rôle est dans le jeu (« Les règles et les rôles ») et dans [`loup-garou/roles.js`](loup-garou/roles.js). Mode « un seul téléphone » : on se passe le téléphone pour découvrir son rôle (caché ensuite), puis au choix :
 
 - **Narrateur : l'app** — une voix (synthèse vocale du navigateur, gratuite) appelle chaque rôle la nuit ; la personne appelée prend le téléphone, agit, puis le repose. Les rôles absents ou morts sont appelés quand même pour ne rien trahir. Le matin, la voix annonce les morts ; le jour, on vote à main levée et on touche le joueur éliminé. Chacun peut revoir discrètement son rôle pendant le débat.
-- **Narration par IA (optionnelle)** — avec une clé API Claude enregistrée sur le téléphone de l'hôte, Claude raconte les annonces comme un conteur (`loup-garou/narrator.js`). La clé n'est jamais envoyée ailleurs qu'à l'API d'Anthropic, et n'est pas dans le repo.
+- **Narrateur : une IA** — même déroulé, mais une IA (Gemini, gratuit avec une clé Google AI Studio, ou Claude, payant) improvise toute la narration, se souvient de la partie, anime le débat et répond quand on lui parle (bouton 🎤, reconnaissance vocale du téléphone). Elle ne reçoit que les informations publiques : jamais les rôles secrets des vivants. La clé reste sur le téléphone (`loup-garou/narrator.js`), jamais dans le repo.
+- Avant le débat, un **tour des messages secrets** : chacun prend le téléphone et lit son message (amoureux, infection…), « rien de nouveau » pour les autres.
+
+**Mode obscur** (tous les modes) : les rôles des joueurs morts ne sont pas révélés. Les morts peuvent voir tous les rôles (onglet « Rôles (réservé aux morts) » sur un seul téléphone, automatiquement en ligne).
 - **Narrateur : un joueur** — il ne joue pas ; après la distribution, il ouvre l'espace narrateur (avec confirmation) pour voir les rôles et le script de la nuit.
 
 ## Configurer le mode en ligne (Supabase)

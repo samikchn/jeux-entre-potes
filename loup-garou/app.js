@@ -16,8 +16,9 @@ const S = {
   lobby: [],
   comp: {},
   reveal: 0,
-  narration: localStorage.getItem("lg-narration") || "voix", // mode local : "voix" ou "humain"
+  narration: localStorage.getItem("lg-narration") || "voix", // mode local : "ia", "voix" ou "humain"
   narratorOpen: false,
+  hideRoles: localStorage.getItem("lg-obscur") === "1", // mode obscur
   showRole: false,
   sel: [], // sélection multiple (Cupidon, Joueur de flûte)
   witch: { heal: null, kill: null },
@@ -55,9 +56,9 @@ const NIGHT_SCRIPT = [
 
 function render() {
   const g = S.game;
-  const localNight = S.narration === "voix" && S.reveal >= (g?.players.length || 0);
+  const localNight = S.narration !== "humain" && S.reveal >= (g?.players.length || 0);
   document.body.classList.toggle("night", g?.phase === "night" && (S.mode !== "local" || localNight));
-  if (S.mode === "local" && S.narration === "voix") document.body.dataset.voice = "1";
+  if (S.mode === "local" && S.narration !== "humain") document.body.dataset.voice = "1";
   else delete document.body.dataset.voice;
   const key = [S.mode, g?.phase, g?.night, g?.step, S.reveal, !!g].join("|");
   Common.render(document.getElementById("app"), view(), key);
@@ -72,7 +73,7 @@ function view() {
   if (!S.game) return warn + lobbyView();
   if (S.mode === "local") {
     if (S.reveal < S.game.players.length) return revealView();
-    return S.narration === "voix" ? Auto.view() : narratorView();
+    return S.narration !== "humain" ? Auto.view() : narratorView();
   }
   if (!me()) return warn + card(`<p class="center">Une partie est en cours dans le salon <b>${esc(S.code)}</b>.<br>Tu joueras à la prochaine !</p>`) + leaveButton();
   const views = { night: nightView, day: dayView, hunter: hunterView, end: endView };
@@ -87,6 +88,13 @@ const actorId = () => (S.mode === "local" ? Auto.actor() : S.me);
 const leaveButton = () => `<button class="ghost" onclick="A.leave()">Quitter</button>`;
 const phase = (label) => `<div class="phase-wrap"><span class="phase">${label}</span></div>`;
 const teamTag = (role) => `<span class="tag ${ROLES[role].team}">${ROLES[role].emoji} ${esc(ROLES[role].name)}</span>`;
+
+// Mode obscur : le rôle des morts reste caché, sauf pour les morts eux-mêmes et en fin de partie.
+function deadRoleTag(p) {
+  const g = S.game;
+  const visible = !g?.hideRoles || g.phase === "end" || (S.mode !== "local" && me() && !me().alive);
+  return visible ? teamTag(p.role) : `<span class="tag">❔ Rôle secret</span>`;
+}
 const pname = (id) => esc(LG.P(S.game, id)?.name);
 
 // Tuiles de joueurs à toucher.
@@ -131,6 +139,14 @@ function homeView() {
     <p class="center"><a href="../" class="muted">← Tous les jeux</a></p>`;
 }
 
+function obscureToggle() {
+  return `
+    <button class="tile ${S.hideRoles ? "selected" : ""}" style="width:100%;align-items:flex-start;text-align:left;margin-top:12px" onclick="A.toggleObscure()">
+      <b>🌑 Mode obscur ${S.hideRoles ? "activé" : "désactivé"}</b>
+      <span class="muted" style="font-weight:400;font-size:.85rem">Le rôle des joueurs morts n'est pas révélé. Les morts peuvent quand même voir tous les rôles.</span>
+    </button>`;
+}
+
 function compositionView() {
   const n = S.lobby.length;
   const c = S.comp;
@@ -141,7 +157,7 @@ function compositionView() {
     return card(`<h2>Composition</h2><div class="row" style="flex-wrap:wrap;gap:6px">
       ${ROLE_ORDER.filter((r) => c[r]).map((r) => `<span class="tag ${ROLES[r].team}">${ROLES[r].emoji} ${c[r] > 1 ? c[r] + " × " : ""}${esc(ROLES[r].name)}</span>`).join("")}
       ${villagers ? `<span class="tag village">🧑‍🌾 ${villagers} × Villageois</span>` : ""}
-    </div>`);
+    </div>${S.hideRoles ? `<p class="muted">🌑 Mode obscur : les rôles des morts restent secrets.</p>` : ""}`);
   }
   const groups = ["loups", "village", "solo"].map((team) => `
     <h3 class="team-title ${team}">${TEAM_LABEL[team]}</h3>
@@ -160,6 +176,7 @@ function compositionView() {
     ${groups}
     <div class="stepper on"><span style="font-size:1.5rem">🧑‍🌾</span><span class="label">Villageois<small>Complètent automatiquement</small></span><b>${villagers}</b></div>
     ${error && n ? `<p class="error">${esc(error)}</p>` : ""}
+    ${obscureToggle()}
   `, "composition");
 }
 
@@ -187,7 +204,7 @@ function lobbyView() {
     return `
       ${card(`
         <h2>Joueurs (${n})</h2>
-        <p class="muted">${S.narration === "voix" ? "Tout le monde joue." : "Sans compter le narrateur."} Ajoutez-les dans l'ordre où vous êtes assis.</p>
+        <p class="muted">${S.narration !== "humain" ? "Tout le monde joue." : "Sans compter le narrateur."} Ajoutez-les dans l'ordre où vous êtes assis.</p>
         <ul class="players">${S.lobby.map((p, i) => `
           <li>${avatar(p.name)}<span class="name">${esc(p.name)}</span>
           <button class="icon ghost" onclick="A.removeLocal(${i})" aria-label="Retirer">✕</button></li>`).join("")}
@@ -274,7 +291,7 @@ function newsView(title) {
   if (!g.deaths.length && !g.news.length) return "";
   const deaths = g.deaths.map(({ id, cause }) => {
     const p = LG.P(g, id);
-    return `<li>${avatar(p.name)}<span class="name">${esc(p.name)}<small class="muted" style="display:block;font-weight:400">${LG.CAUSE[cause]}</small></span>${teamTag(p.role)}</li>`;
+    return `<li>${avatar(p.name)}<span class="name">${esc(p.name)}<small class="muted" style="display:block;font-weight:400">${LG.CAUSE[cause]}</small></span>${deadRoleTag(p)}</li>`;
   }).join("");
   return card(`
     <h2>${title}</h2>
@@ -290,7 +307,7 @@ function seatsView() {
       <summary><b>🪑 Autour de la table</b></summary>
       <ul class="players">${g.seats.map((id, i) => {
         const p = LG.P(g, id);
-        return `<li class="${p.alive ? "" : "dead"}"><span class="num">${i + 1}</span>${avatar(p.name)}<span class="name">${esc(p.name)}</span>${p.alive ? "" : teamTag(p.role)}</li>`;
+        return `<li class="${p.alive ? "" : "dead"}"><span class="num">${i + 1}</span>${avatar(p.name)}<span class="name">${esc(p.name)}</span>${p.alive ? "" : deadRoleTag(p)}</li>`;
       }).join("")}</ul>
     </details>`);
 }
@@ -321,29 +338,45 @@ function voicePicker() {
     <p class="muted" style="font-size:.8rem">💡 Pour une voix plus naturelle sur iPhone : Réglages › Accessibilité › Contenu énoncé › Voix › Français, télécharge une voix « améliorée » ou « premium », puis choisis-la ici.</p>`;
 }
 
+// Réglage de l'IA : fournisseur et clé (gardée uniquement sur ce téléphone).
+function aiSettings() {
+  const key = Narrator.apiKey();
+  const gemini = Narrator.provider() === "gemini";
+  const prov = (p, label) => `<button class="${Narrator.provider() === p ? "" : "secondary"}" onclick="A.setProvider('${p}')">${label}</button>`;
+  return `
+    <div class="row">${prov("gemini", "Gemini · gratuit")}${prov("claude", "Claude · payant")}</div>
+    ${key
+      ? `<p>✅ Clé ${gemini ? "Gemini" : "Claude"} enregistrée (…${esc(key.slice(-4))})</p><button class="secondary" onclick="A.forgetAiKey()">Supprimer la clé</button>`
+      : `${gemini
+          ? `<ol class="muted" style="font-size:.85rem;padding-left:18px">
+              <li>Ouvre <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> et connecte-toi avec un compte Google.</li>
+              <li>Touche « Create API key » (gratuit, sans carte bancaire).</li>
+              <li>Copie la clé et colle-la ci-dessous.</li></ol>
+             <p class="muted" style="font-size:.8rem">Offre gratuite : Google peut utiliser les échanges pour améliorer ses services. Le narrateur ne reçoit jamais les rôles secrets.</p>`
+          : `<p class="muted" style="font-size:.85rem">Crée une clé sur <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a> (payant, quelques centimes par partie).</p>`}
+         <div class="row"><input id="aikey" type="password" placeholder="Colle ta clé ici" autocomplete="off"><button onclick="A.saveAiKey()">OK</button></div>`}
+    <p class="muted" style="font-size:.8rem">La clé reste uniquement sur ce téléphone.</p>`;
+}
+
 // Choix du narrateur pour le mode un seul téléphone.
 function narrationView() {
   const opt = (mode, emoji, title, desc) => `
     <button class="tile ${S.narration === mode ? "selected" : ""}" style="align-items:flex-start;text-align:left" onclick="A.setNarration('${mode}')">
       <b>${emoji} ${title}</b><span class="muted" style="font-weight:400;font-size:.85rem">${desc}</span>
     </button>`;
-  const key = Narrator.apiKey();
+  const ia = S.narration === "ia";
   return card(`
     <h2>Narrateur</h2>
     <div class="grid">
-      ${opt("voix", "🔊", "L'app", "Une voix appelle chaque rôle la nuit. Tout le monde joue.")}
+      ${opt("ia", "🤖", "Une IA", "Elle improvise, se souvient de la partie et vous répond au micro.")}
+      ${opt("voix", "🔊", "Une voix", "Elle lit le script et appelle chaque rôle la nuit.")}
       ${opt("humain", "🧑", "Un joueur", "Il ne joue pas : l'app lui donne les rôles et le script.")}
     </div>
-    ${S.narration === "voix" ? `
-      <details id="ai">
-        <summary><b>🤖 Narration par IA (optionnel)</b></summary>
-        <p class="muted">Avec une clé API Claude (console.anthropic.com), l'IA raconte les annonces comme un vrai conteur. Sans clé, la voix lit un texte simple. La clé reste uniquement sur ce téléphone ; chaque annonce coûte une fraction de centime.</p>
-        ${key
-          ? `<p>✅ Clé enregistrée (…${esc(key.slice(-4))})</p><button class="secondary" onclick="A.forgetAiKey()">Supprimer la clé</button>`
-          : `<div class="row"><input id="aikey" type="password" placeholder="sk-ant-…" autocomplete="off"><button onclick="A.saveAiKey()">OK</button></div>`}
-      </details>
+    ${S.narration !== "humain" ? `
+      ${ia ? aiSettings() : `<details id="ai"><summary><b>🤖 Annonces racontées par une IA (optionnel)</b></summary>${aiSettings()}</details>`}
       ${voicePicker()}
       <button class="secondary" onclick="A.testVoice()">🔊 Tester la voix</button>
+      ${ia ? `<button class="secondary" onclick="A.testMic()">🎤 Tester le micro</button>` : ""}
       <p class="center"><a href="diagnostic-voix.html">🔧 La voix ne marche pas ? Diagnostic</a></p>
       <p class="muted">Montez le son du téléphone et posez-le au centre de la table. Sur iPhone, désactivez le mode silencieux (bouton sur le côté), sinon la voix reste muette.</p>` : ""}
   `);
@@ -569,7 +602,11 @@ const A = {
 
   start() {
     if (LG.compositionError(S.lobby.length, S.comp)) return;
+    if (S.mode === "local" && S.narration === "ia" && !Narrator.apiKey()) {
+      return toast("Ajoute une clé IA dans « Narrateur », ou choisis « Une voix ».");
+    }
     S.game = LG.newGame(S.lobby, S.comp);
+    S.game.hideRoles = !!S.hideRoles;
     S.reveal = 0;
     resetLocalUi();
     act();
@@ -587,13 +624,31 @@ const A = {
   nextReveal() {
     S.reveal++;
     render();
-    if (S.reveal >= S.game.players.length && S.narration === "voix") Auto.start();
+    if (S.reveal >= S.game.players.length && S.narration !== "humain") Auto.start();
   },
 
   setNarration(mode) {
     S.narration = mode;
     localStorage.setItem("lg-narration", mode);
     render();
+  },
+
+  toggleObscure() {
+    S.hideRoles = !S.hideRoles;
+    localStorage.setItem("lg-obscur", S.hideRoles ? "1" : "0");
+    act();
+  },
+
+  setProvider(p) {
+    Narrator.setProvider(p);
+    render();
+  },
+
+  async testMic() {
+    if (!Narrator.canListen()) return toast("Ce navigateur ne sait pas écouter le micro.");
+    toast("🎤 Parle maintenant…");
+    const heard = await Narrator.listen();
+    toast(heard ? `J'ai entendu : « ${heard} »` : Narrator.lastError() || "Je n'ai rien entendu.");
   },
 
   setVoice(name) {
@@ -640,7 +695,7 @@ const A = {
     await spoken;
     const story = await Narrator.tell("Présente-toi en une phrase comme narrateur de la partie.");
     if (story) Narrator.speak(story);
-    else toast("IA indisponible : " + (Narrator.tell.lastError || "erreur inconnue"));
+    else toast("IA indisponible : " + (Narrator.lastError() || "erreur inconnue"));
   },
 
   // Retourne la carte sans tout redessiner, pour garder l'animation.
@@ -778,7 +833,7 @@ function act(fn) {
   if (S.game && fn) fn(S.game);
   if (S.mode === "host") {
     localStorage.setItem("lg-host", JSON.stringify({ code: S.code, game: S.game, comp: S.comp, lobby: S.lobby }));
-    room?.send("state", { hostId: S.me, game: S.game, lobby: S.lobby, comp: S.comp });
+    room?.send("state", { hostId: S.me, game: S.game, lobby: S.lobby, comp: S.comp, hideRoles: S.hideRoles });
   }
   render();
 }
@@ -792,7 +847,7 @@ function connect() {
       if (event === "state" && S.mode === "player") {
         if (S.game?.phase !== payload.game?.phase || S.game?.step !== payload.game?.step) resetSelections();
         if (!payload.game) S.showRole = false;
-        Object.assign(S, { hostId: payload.hostId, hostGone: false, game: payload.game, lobby: payload.lobby, comp: payload.comp });
+        Object.assign(S, { hostId: payload.hostId, hostGone: false, game: payload.game, lobby: payload.lobby, comp: payload.comp, hideRoles: !!payload.hideRoles });
         render();
       }
       if (S.mode !== "host" || !S.game) return;

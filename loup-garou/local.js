@@ -64,17 +64,66 @@ const Auto = (() => {
     st.run++;
     tap(null);
     Narrator.stop();
-    Object.assign(st, { screen: null, peek: null, viewer: null, story: "" });
+    Narrator.stopListening();
+    Object.assign(st, { screen: null, peek: null, viewer: null, story: "", busy: null, deadPick: null, heard: "", reply: "" });
   }
 
   async function say(token, text) {
     await step(token, Narrator.speak(text));
   }
 
-  // Lit l'annonce, racontée par l'IA si une clé est enregistrée.
+  // ---------- Narrateur IA (mode « ia ») ----------
+  // L'IA ne connaît que les informations publiques : elle ne peut donc rien trahir.
+  const aiMode = () => S.narration === "ia" && !!Narrator.apiKey();
+
+  function systemPrompt() {
+    const game = g();
+    const seats = game.seats.map((id) => LG.P(game, id).name).join(", ");
+    const counts = {};
+    game.players.forEach((p) => (counts[p.role] = (counts[p.role] || 0) + 1));
+    const roles = Object.entries(counts).map(([r, c]) => `${c} × ${ROLES[r].name} (${ROLES[r].desc})`).join(" ; ");
+    return [
+      "Tu es le narrateur, le maître du jeu, d'une partie de Loup-Garou entre amis réunis autour d'une table, avec un seul téléphone posé au centre.",
+      "Tes réponses sont lues à voix haute par une synthèse vocale : parle naturellement, en français, en 1 à 4 phrases courtes. Pas d'emoji, pas de liste, pas de mise en forme.",
+      "Ton style : conteur mystérieux, drôle et un peu taquin, comme un vrai animateur de soirée. Appelle les joueurs par leur prénom.",
+      "Tu ne connais PAS les rôles secrets des joueurs vivants. N'invente jamais un fait de jeu : tu annonces seulement ce que l'application te donne dans les messages [Événement]. Si on te demande qui est loup, réponds avec humour que c'est au village de le découvrir.",
+      "L'application gère elle-même les actions secrètes de la nuit, l'ordre des appels et l'élimination (les joueurs touchent l'écran). Toi, tu racontes, tu animes le débat, tu relances les joueurs silencieux, tu réponds aux questions sur les règles et tu rappelles de voter quand le débat traîne.",
+      "Les messages [Un joueur dit] sont ce que les joueurs disent au micro (la transcription peut contenir des erreurs).",
+      `Joueurs, dans l'ordre autour de la table : ${seats}.`,
+      `Composition de la partie (connue de tous) : ${roles}.`,
+      game.hideRoles ? "Mode obscur : les rôles des joueurs morts ne sont pas révélés. Ne les révèle jamais." : "",
+    ].join("\n");
+  }
+
+  // Ajoute un message à la conversation et renvoie la réponse de l'IA (null en cas d'échec).
+  async function aiReply(text) {
+    st.chat.push({ role: "user", text });
+    let history = st.chat.slice(-24);
+    while (history.length && history[0].role !== "user") history = history.slice(1);
+    // Fusionne les messages consécutifs du même côté (ex. un joueur parle pendant que l'IA
+    // réfléchit encore) : l'IA attend une alternance joueurs / narrateur.
+    history = history.reduce((acc, m) => {
+      const last = acc[acc.length - 1];
+      if (last && last.role === m.role) last.text += "\n" + m.text;
+      else acc.push({ ...m });
+      return acc;
+    }, []);
+    const reply = await Narrator.ask(systemPrompt(), history);
+    if (reply) st.chat.push({ role: "assistant", text: reply });
+    else {
+      st.chat.pop();
+      if (!st.aiWarned) toast("IA indisponible : " + (Narrator.lastError() || "pas de réponse") + ". Le narrateur simple prend le relais.");
+      st.aiWarned = true;
+    }
+    return reply;
+  }
+
+  // Lit une annonce : improvisée par l'IA (mode ia), racontée par l'IA (voix + clé), ou texte simple.
   async function announce(token, facts, plain) {
     st.story = "";
-    const story = Narrator.apiKey() ? await step(token, Narrator.tell(facts)) : null;
+    let story = null;
+    if (aiMode()) story = await step(token, aiReply("[Événement] " + facts));
+    else if (Narrator.apiKey() && S.narration === "voix") story = await step(token, Narrator.tell(facts));
     st.story = story || "";
     render();
     await say(token, story || plain);
@@ -82,12 +131,14 @@ const Auto = (() => {
 
   async function intro(token) {
     const names = g().players.map((p) => p.name).join(", ");
+    st.chat = [];
+    st.aiWarned = false;
     show("dusk");
     // Première phrase lancée directement par l'appui (obligatoire pour la voix sur iPhone),
     // avant d'attendre une éventuelle réponse de l'IA.
     await say(token, "La partie commence.");
     await announce(token,
-      `Début de la partie avec ${g().players.length} joueurs : ${names}. Souhaite la bienvenue au village et annonce que la première nuit tombe et que tout le monde ferme les yeux.`,
+      `Début de la partie avec ${g().players.length} joueurs : ${names}. Souhaite la bienvenue au village, présente l'ambiance en deux phrases, puis annonce que la première nuit tombe et que tout le monde ferme les yeux.`,
       "Bienvenue au village. La première nuit tombe. Tout le monde ferme les yeux.");
   }
 
@@ -95,7 +146,8 @@ const Auto = (() => {
     const game = g();
     if (game.night > 1) {
       show("dusk", { story: "" });
-      await say(token, "La nuit tombe sur le village. Tout le monde ferme les yeux.");
+      if (aiMode()) await announce(token, `La nuit ${game.night} tombe. Dis à tout le monde de fermer les yeux, en une ou deux phrases.`, "La nuit tombe sur le village. Tout le monde ferme les yeux.");
+      else await say(token, "La nuit tombe sur le village. Tout le monde ferme les yeux.");
     }
     const present = new Set(game.players.map((p) => p.role));
     for (const call of CALLS) {
@@ -197,7 +249,8 @@ const Auto = (() => {
   function deathFacts(deaths) {
     return deaths.map(({ id, cause }) => {
       const p = LG.P(g(), id);
-      return `${p.name}, ${LG.CAUSE[cause]}. Son rôle : ${ROLES[p.role].name}.`;
+      // Mode obscur : le rôle des morts reste secret.
+      return g().hideRoles ? `${p.name}, ${LG.CAUSE[cause]}.` : `${p.name}, ${LG.CAUSE[cause]}. Son rôle : ${ROLES[p.role].name}.`;
     });
   }
 
@@ -209,7 +262,7 @@ const Auto = (() => {
     const next = waitTap();
     const plain = ["Le village se réveille.", ...facts, ...news].join(" ");
     await announce(token,
-      `Le matin du jour ${game.night}. Morts de la nuit : ${facts.length ? facts.join(" ") : "aucun"}. Autres annonces à lire telles quelles : ${news.join(" ") || "aucune"}.`,
+      `Le matin du jour ${game.night}. Morts de la nuit : ${facts.length ? facts.join(" ") : "aucun."} Autres annonces à lire telles quelles : ${news.join(" ") || "aucune."}`,
       plain);
     await step(token, next);
   }
@@ -218,17 +271,25 @@ const Auto = (() => {
     // Le 1er jour avec Cupidon, on fait toujours le tour : les amoureux doivent se découvrir.
     const firstCupidDay = g().night === 1 && g().players.some((p) => p.role === "cupidon");
     await secretRound(token, firstCupidDay);
-    show("day", { peek: null, viewer: null });
+    show("day", { peek: null, viewer: null, deadPick: null, deadView: null, heard: "", reply: "" });
     const voted = waitTap();
-    await say(token, "Débattez, puis votez à main levée. Touchez ensuite le joueur éliminé sur l'écran.");
+    const alive = LG.alive(g()).map((p) => p.name).join(", ");
+    if (aiMode()) {
+      await announce(token,
+        `Le débat du jour ${g().night} commence. Encore en vie : ${alive}. Lance le débat en interpellant un ou deux joueurs par leur prénom, et rappelle qu'à la fin on vote à main levée puis qu'on touche le joueur éliminé sur l'écran.`,
+        "Débattez, puis votez à main levée. Touchez ensuite le joueur éliminé sur l'écran.");
+    } else {
+      await say(token, "Débattez, puis votez à main levée. Touchez ensuite le joueur éliminé sur l'écran.");
+    }
     const id = await step(token, voted);
+    Narrator.stopListening();
     const game = g();
     LG.dayVote(game, id || null);
     const facts = deathFacts(game.deaths);
     show("verdict", { story: "" });
     const next = waitTap();
     await announce(token,
-      `Résultat du vote du village : ${facts.length ? facts.join(" ") : "personne n'est éliminé"}. ${game.news.join(" ")}`,
+      `Résultat du vote du village : ${facts.length ? facts.join(" ") : "personne n'est éliminé."} ${game.news.join(" ")}`,
       [...facts, ...game.news].join(" ") || "Personne n'est éliminé.");
     await step(token, next);
   }
@@ -256,7 +317,50 @@ const Auto = (() => {
     const game = g();
     show("end", { story: "" });
     const roles = game.players.map((p) => `${p.name} : ${ROLES[p.role].name}`).join(", ");
-    await announce(token, `Fin de la partie : ${LG.WIN[game.winner].title} Rôles : ${roles}. Conclus l'histoire du village.`, LG.WIN[game.winner].title);
+    await announce(token, `Fin de la partie : ${LG.WIN[game.winner].title} Tu peux maintenant révéler tous les rôles : ${roles}. Conclus l'histoire du village avec un mot pour les gagnants.`, LG.WIN[game.winner].title);
+  }
+
+  // Pendant le débat : un joueur parle au narrateur IA (appuyer pour parler).
+  async function talk() {
+    if (st.busy) {
+      if (st.busy === "listening") Narrator.stopListening();
+      return;
+    }
+    if (!Narrator.canListen()) return toast("Ce navigateur ne sait pas écouter le micro.");
+    const token = st.run;
+    st.busy = "listening";
+    render();
+    const heard = await Narrator.listen();
+    if (token !== st.run) return;
+    if (!heard) {
+      st.busy = null;
+      render();
+      return toast(Narrator.lastError() || "Je n'ai rien entendu, réessaie.");
+    }
+    st.heard = heard;
+    await converse(token, `[Un joueur dit] ${heard}`);
+  }
+
+  // Le narrateur relance le débat de lui-même.
+  async function nudge() {
+    if (st.busy) return;
+    const alive = LG.alive(g()).map((p) => p.name).join(", ");
+    st.heard = "";
+    await converse(st.run, `[Relance] Le débat ralentit. Relance-le avec une question ou une provocation à un joueur précis parmi : ${alive}.`);
+  }
+
+  async function converse(token, text) {
+    st.busy = "thinking";
+    render();
+    const reply = await aiReply(text);
+    if (token !== st.run) return;
+    st.reply = reply || "";
+    st.busy = reply ? "speaking" : null;
+    render();
+    if (reply) await Narrator.speak(reply);
+    if (token !== st.run) return;
+    st.busy = null;
+    render();
   }
 
   // ---------- Écrans ----------
@@ -349,8 +453,21 @@ const Auto = (() => {
       return roleCard(p, false, "this.classList.toggle('shown')") + secretsView() +
         `<button onclick="Auto.peek(null)">🙈 Cacher et rendre le téléphone</button>`;
     }
+    if (st.deadPick) {
+      const p = LG.P(game, st.deadPick);
+      if (!st.deadView) {
+        return card(`<p class="center">Tu es bien <b>${esc(p.name)}</b>, mort ?<br><span class="muted">Tous les rôles vont s'afficher : les vivants ne regardent pas !</span></p>
+          <button onclick="Auto.deadConfirm()">Oui, voir les rôles</button>
+          <button class="secondary" onclick="Auto.deadPick(null)">Annuler</button>`);
+      }
+      return card(`<h2>💀 Tous les rôles</h2><ul class="players">${game.players.map((q) => `
+          <li class="${q.alive ? "" : "dead"}">${avatar(q.name)}<span class="name">${esc(q.name)}${game.lovers?.includes(q.id) ? " 💘" : ""}${q.wolf && ROLES[q.role].team === "village" ? " 🐺" : ""}</span>${teamTag(q.role)}</li>`).join("")}
+        </ul>`) + `<button onclick="Auto.deadPick(null)">🙈 Cacher et rendre le téléphone</button>`;
+    }
+    const dead = game.players.filter((p) => !p.alive);
     return `
       ${newsView("🌅 Cette nuit…")}
+      ${aiMode() ? aiTalkView() : ""}
       ${card(`
         <h2>🗳️ Qui le village élimine-t-il ?</h2>
         <p class="muted">Débattez, votez à main levée, puis touchez le joueur éliminé.</p>
@@ -362,8 +479,25 @@ const Auto = (() => {
           <p class="muted">Prends le téléphone discrètement et touche ton prénom.</p>
           ${tiles(LG.alive(game), "Auto.peek")}
         </details>`)}
+      ${dead.length ? card(`
+        <details id="deadroles">
+          <summary><b>💀 Rôles (réservé aux morts)</b></summary>
+          <p class="muted">Les joueurs morts peuvent voir tous les rôles. Touche ton prénom.</p>
+          ${tiles(dead, "Auto.deadPick")}
+        </details>`) : ""}
       ${seatsView()}
       ${leaveButton()}`;
+  }
+
+  function aiTalkView() {
+    const label = { listening: "⏹️ J'ai fini de parler", thinking: "🤔 Le narrateur réfléchit…", speaking: "🗣️ Le narrateur parle…" }[st.busy] || "🎤 Parler au narrateur";
+    return card(`
+      <h2>🤖 Le narrateur</h2>
+      ${st.heard ? `<p class="muted">Vous : « ${esc(st.heard)} »</p>` : ""}
+      ${st.reply || st.story ? `<p class="story">« ${esc(st.reply || st.story)} »</p>` : ""}
+      <button onclick="Auto.talk()" ${st.busy === "thinking" || st.busy === "speaking" ? "disabled" : ""}>${label}</button>
+      <button class="secondary" onclick="Auto.nudge()" ${st.busy ? "disabled" : ""}>🎙️ Relancer le débat</button>
+      <p class="muted" style="font-size:.8rem">Appuie, parle, puis appuie à nouveau. Pose-lui une question sur les règles, accuse quelqu'un, demande-lui son avis…</p>`);
   }
 
   return {
@@ -396,6 +530,17 @@ const Auto = (() => {
       markSeen(st.viewer);
       render();
     },
+    deadPick(id) {
+      st.deadPick = id;
+      st.deadView = false;
+      render();
+    },
+    deadConfirm() {
+      st.deadView = true;
+      render();
+    },
+    talk,
+    nudge,
     mute() {
       Narrator.toggleMute();
       render();

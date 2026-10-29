@@ -1,8 +1,8 @@
-// Narrateur du mode « un seul téléphone » : lit les textes à voix haute (synthèse vocale
-// du navigateur, gratuite) et, si une clé API Claude est enregistrée sur ce téléphone,
-// demande à Claude de raconter les annonces de façon plus vivante.
+// Narrateur du mode « un seul téléphone » : voix du téléphone (gratuite), écoute au micro, et
+// intelligence artificielle optionnelle (Gemini gratuit ou Claude) pour un narrateur qui improvise.
 const Narrator = (() => {
-  const MODEL = "claude-opus-5-5";
+  const CLAUDE_MODEL = "claude-opus-5-5";
+  const GEMINI_MODEL = "gemini-flash-latest";
   const SYSTEM =
     "Tu es le narrateur d'une partie de Loup-Garou entre amis, autour d'une table. " +
     "Réponds en 2 ou 3 phrases courtes en français, à lire à voix haute : ton mystérieux, un peu drôle. " +
@@ -75,54 +75,126 @@ const Narrator = (() => {
     return muted;
   }
 
-  const apiKey = () => localStorage.getItem("lg-ai-key") || "";
+  // ---------- Intelligence artificielle ----------
+  // Deux fournisseurs : Gemini (Google, offre gratuite avec une clé) ou Claude (payant).
+  // La clé reste uniquement sur ce téléphone (localStorage).
+  if (localStorage.getItem("lg-ai-key") && !localStorage.getItem("lg-ai-key-claude")) {
+    localStorage.setItem("lg-ai-key-claude", localStorage.getItem("lg-ai-key")); // ancienne version
+    localStorage.removeItem("lg-ai-key");
+  }
+  const provider = () => localStorage.getItem("lg-ai-provider") || "gemini";
+  const setProvider = (p) => localStorage.setItem("lg-ai-provider", p);
+  const apiKey = () => localStorage.getItem("lg-ai-key-" + provider()) || "";
   function setApiKey(key) {
-    if (key) localStorage.setItem("lg-ai-key", key.trim());
-    else localStorage.removeItem("lg-ai-key");
+    if (key) localStorage.setItem("lg-ai-key-" + provider(), key.trim());
+    else localStorage.removeItem("lg-ai-key-" + provider());
   }
 
-  // Raconte les faits donnés. Renvoie null sans clé ou en cas d'erreur (le texte simple est alors lu).
-  async function tell(facts) {
+  let lastError = "";
+
+  async function callClaude(key, system, messages, signal) {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      signal,
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": key,
+        "anthropic-version": "2026-10-21",
+        "anthropic-beta": "server-side-fallback-2026-07-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: 2000,
+        output_config: { effort: "low" },
+        fallbacks: "default",
+        system,
+        messages: messages.map((m) => ({ role: m.role, content: m.text })),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error?.message || "HTTP " + res.status);
+    if (data.stop_reason === "refusal") return null;
+    return data.content.filter((b) => b.type === "text").map((b) => b.text).join(" ");
+  }
+
+  async function callGemini(key, system, messages, signal) {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
+      method: "POST",
+      signal,
+      headers: { "content-type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: system }] },
+        contents: messages.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.text }] })),
+        generationConfig: { maxOutputTokens: 2048 },
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error?.message || "HTTP " + res.status);
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    return parts.filter((p) => !p.thought && p.text).map((p) => p.text).join(" ");
+  }
+
+  // Envoie une conversation ({role: "user"|"assistant", text}) à l'IA. null si pas de clé ou erreur.
+  async function ask(system, messages) {
     const key = apiKey();
     if (!key) return null;
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 12000);
+    const timer = setTimeout(() => ctrl.abort(), 15000);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        signal: ctrl.signal,
-        headers: {
-          "content-type": "application/json",
-          "x-api-key": key,
-          "anthropic-version": "2026-10-21",
-          "anthropic-beta": "server-side-fallback-2026-07-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          max_tokens: 2000,
-          output_config: { effort: "low" },
-          fallbacks: "default",
-          system: SYSTEM,
-          messages: [{ role: "user", content: facts }],
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error?.message || "HTTP " + res.status);
-      if (data.stop_reason === "refusal") return null;
-      const text = data.content.filter((b) => b.type === "text").map((b) => b.text).join(" ").trim();
+      const call = provider() === "claude" ? callClaude : callGemini;
+      const text = (await call(key, system, messages, ctrl.signal) || "").replace(/[*#_`]/g, "").trim();
+      lastError = "";
       return text || null;
     } catch (e) {
-      tell.lastError = e.name === "AbortError" ? "L'IA a mis trop de temps à répondre." : e.message;
-      console.warn("Narration IA indisponible :", tell.lastError);
+      lastError = e.name === "AbortError" ? "L'IA a mis trop de temps à répondre." : e.message;
+      console.warn("IA indisponible :", lastError);
       return null;
     } finally {
       clearTimeout(timer);
     }
   }
 
+  // Raconte des faits en une fois (narrateur vocal avec IA, sans mémoire).
+  const tell = (facts) => ask(SYSTEM, [{ role: "user", text: facts }]);
+
+  // ---------- Écoute (reconnaissance vocale du téléphone, gratuite) ----------
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognizer = null;
+
+  // Écoute une phrase et renvoie le texte compris (null si rien ou si l'écoute est impossible).
+  function listen() {
+    if (!Recognition) return Promise.resolve(null);
+    stop();
+    return new Promise((resolve) => {
+      const r = new Recognition();
+      recognizer = r;
+      r.lang = "fr-FR";
+      r.interimResults = false;
+      r.maxAlternatives = 1;
+      let heard = "";
+      r.onresult = (e) => {
+        heard = Array.from(e.results).map((res) => res[0].transcript).join(" ");
+      };
+      r.onerror = (e) => {
+        lastError = e.error === "not-allowed" ? "Micro refusé : autorise le micro pour Safari." : "Écoute impossible : " + e.error;
+      };
+      r.onend = () => {
+        recognizer = null;
+        resolve(heard.trim() || null);
+      };
+      r.start();
+    });
+  }
+
+  function stopListening() {
+    if (recognizer) recognizer.stop();
+  }
+
   return {
-    speak, stop, toggleMute, isMuted: () => muted, started: () => lastStarted, isIOS, apiKey, setApiKey, tell,
+    speak, stop, toggleMute, isMuted: () => muted, started: () => lastStarted, isIOS,
     voices: frenchVoices, setVoice, voiceName: () => localStorage.getItem("lg-voice") || "",
+    provider, setProvider, apiKey, setApiKey, ask, tell, lastError: () => lastError,
+    canListen: () => !!Recognition, listen, stopListening, isListening: () => !!recognizer,
   };
 })();
