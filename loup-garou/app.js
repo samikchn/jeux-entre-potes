@@ -153,11 +153,28 @@ function compositionView() {
       </div>`).join("")}`).join("");
   return card(`
     <h2>Composition</h2>
-    <button class="secondary" onclick="A.suggest()">✨ Composition conseillée</button>
+    ${presetsView(n)}
+    <h3>✏️ Ou réglez chaque rôle</h3>
     ${groups}
     <div class="stepper on"><span style="font-size:1.5rem">🧑‍🌾</span><span class="label">Villageois<small>Complètent automatiquement</small></span><b>${villagers}</b></div>
     ${error && n ? `<p class="error">${esc(error)}</p>` : ""}
   `, "composition");
+}
+
+// Compositions toutes prêtes, adaptées au nombre de joueurs.
+function presetsView(n) {
+  const list = compositionsFor(n);
+  if (!list.length) return `<p class="muted">Ajoutez au moins 4 joueurs pour voir les compositions conseillées.</p>`;
+  const same = (a, b) => ROLE_ORDER.every((r) => (a[r] || 0) === (b[r] || 0));
+  return `
+    <h3>✨ Compositions conseillées pour ${n} joueurs</h3>
+    <div class="presets">${list.map((p) => `
+      <button class="tile preset ${same(p.comp, S.comp) ? "selected" : ""}" onclick="A.preset('${p.id}')">
+        <b>${p.emoji} ${p.name}</b>
+        <span class="muted">${esc(p.desc)}</span>
+        <span class="preset-roles">${ROLE_ORDER.filter((r) => p.comp[r]).map((r) => ROLES[r].emoji.repeat(p.comp[r])).join(" ")}</span>
+      </button>`).join("")}
+    </div>`;
 }
 
 function lobbyView() {
@@ -310,7 +327,7 @@ function narrationView() {
           : `<div class="row"><input id="aikey" type="password" placeholder="sk-ant-…" autocomplete="off"><button onclick="A.saveAiKey()">OK</button></div>`}
       </details>
       <button class="secondary" onclick="A.testVoice()">🔊 Tester la voix</button>
-      <p class="muted">Montez le son du téléphone et posez-le au centre de la table.</p>` : ""}
+      <p class="muted">Montez le son du téléphone et posez-le au centre de la table. Sur iPhone, désactivez le mode silencieux (bouton sur le côté), sinon la voix reste muette.</p>` : ""}
   `);
 }
 
@@ -524,9 +541,12 @@ const A = {
     act();
   },
 
-  suggest() {
-    S.comp = suggestedComposition(S.lobby.length);
+  preset(id) {
+    const p = compositionsFor(S.lobby.length).find((c) => c.id === id);
+    if (!p) return;
+    S.comp = p.comp;
     act();
+    toast(`${p.emoji} Composition « ${p.name} » choisie`);
   },
 
   start() {

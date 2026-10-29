@@ -82,6 +82,16 @@ button, .btn {
   transition: transform .1s, opacity .2s;
 }
 button:active:not(:disabled) { transform: scale(.97); }
+
+/* Retour au clic (classe ajoutée par js/common.js, aussi sur iPhone où :active est capricieux) */
+.pressed { animation: press .3s ease-out; }
+@keyframes press {
+  0% { transform: scale(1); filter: brightness(1); }
+  30% { transform: scale(.95); filter: brightness(1.35); box-shadow: 0 0 0 4px rgba(236, 72, 153, .35); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+.flip.pressed { animation: none; }
+.flip.pressed .flip-inner { filter: brightness(1.2); }
 button:disabled { opacity: .35; cursor: default; box-shadow: none; }
 button.secondary { background: var(--card); border: 1px solid var(--border); color: var(--text); box-shadow: none; }
 button.ghost { background: transparent; color: var(--muted); box-shadow: none; font-weight: 500; }
@@ -272,6 +282,10 @@ h3 { font-size: .95rem; margin: 14px 0 8px; color: var(--muted); }
 .face.back.team-solo { border-color: #f97316; }
 .card.task { border-color: rgba(139, 92, 246, .6); box-shadow: 0 0 30px rgba(139, 92, 246, .2); }
 .secret { margin: 6px 0; }
+.presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tile.preset { align-items: flex-start; text-align: left; gap: 4px; padding: 12px; }
+.tile.preset .muted { font-weight: 400; font-size: .78rem; line-height: 1.3; }
+.preset-roles { font-size: .9rem; line-height: 1.4; word-break: break-all; }
 .story { font-style: italic; color: #ddd6fe; line-height: 1.5; margin: 0; }
 .script li { margin-bottom: 10px; }
 button.danger { background: linear-gradient(135deg, #dc2626, #f97316); }

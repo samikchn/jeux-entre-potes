@@ -25,17 +25,71 @@ const ROLES = {
 
 const TEAM_LABEL = { loups: "Loups", village: "Village", solo: "Solitaires" };
 
-// Composition conseillée selon le nombre de joueurs (les Villageois complètent).
-function suggestedComposition(n) {
-  const comp = { loup: n <= 5 ? 1 : n <= 8 ? 2 : n <= 11 ? 3 : 4 };
-  const extras = [
-    [4, "voyante"], [5, "sorciere"], [6, "chasseur"], [7, "cupidon"], [8, "garde"],
-    [10, "renard"], [11, "ancien"], [12, "montreur"], [13, "idiot"], [14, "corbeau"],
-  ];
-  for (const [min, role] of extras) if (n >= min) comp[role] = 1;
-  if (n >= 9) {
+// Compositions conseillées. Pour chacune : les loups selon le nombre de joueurs, puis les rôles
+// de `extras` dans l'ordre, tant qu'il reste assez de Villageois. `min` : joueurs minimum.
+const PRESETS = [
+  {
+    id: "decouverte", emoji: "🌱", name: "Découverte", desc: "Peu de rôles, idéal pour une 1re partie.",
+    villagers: 0.4, extras: ["voyante", "sorciere", "chasseur"],
+  },
+  {
+    id: "classique", emoji: "🏡", name: "Classique", desc: "Les rôles incontournables.",
+    villagers: 0.17, extras: ["voyante", "sorciere", "chasseur", "cupidon", "garde", "renard", "ancien", "montreur", "idiot", "corbeau"],
+    special: (n, c) => n >= 9 && swapWolf(c, "grandloup"),
+  },
+  {
+    id: "enquete", emoji: "🔎", name: "Enquête", desc: "Plein d'indices : voyante, renard, ours, corbeau.",
+    villagers: 0.2, extras: ["voyante", "renard", "montreur", "corbeau", "ancien", "garde", "chasseur", "idiot"],
+  },
+  {
+    id: "meute", emoji: "🐺", name: "Meute sauvage", desc: "Des loups plus dangereux.",
+    villagers: 0.2, extras: ["voyante", "sorciere", "garde", "chasseur", "chevalier", "ancien", "renard"],
+    special: (n, c) => {
+      swapWolf(c, "grandloup");
+      if (n >= 7) swapWolf(c, "infect");
+    },
+  },
+  {
+    id: "intrigues", emoji: "💘", name: "Intrigues", desc: "Amours, trahisons et transformations.",
+    villagers: 0.2, extras: ["cupidon", "voyante", "enfant", "idiot", "sorciere", "chevalier", "chasseur", "corbeau"],
+  },
+  {
+    id: "chaos", emoji: "🔥", name: "Chaos", desc: "Les solitaires s'en mêlent : chacun pour soi !",
+    min: 7, villagers: 0.1, extras: ["pyromane", "voyante", "sorciere", "loupblanc", "flute", "cupidon", "chasseur", "garde", "enfant", "renard"],
+  },
+];
+
+const wolvesFor = (n) => (n <= 5 ? 1 : n <= 8 ? 2 : n <= 11 ? 3 : 4);
+
+// Remplace un Loup-garou simple par un loup spécial.
+function swapWolf(comp, role) {
+  if (comp.loup > 1 || (comp.loup === 1 && !comp[role])) {
     comp.loup--;
-    comp.grandloup = 1;
+    comp[role] = 1;
   }
-  return comp;
+}
+
+function buildPreset(preset, n) {
+  if (n < (preset.min || 4)) return null;
+  const comp = { loup: wolvesFor(n) };
+  preset.special?.(n, comp);
+  const minVillagers = Math.round(n * preset.villagers);
+  const count = () => Object.values(comp).reduce((s, c) => s + c, 0);
+  for (const role of preset.extras) {
+    if (n - count() <= minVillagers) break;
+    comp[role] = 1;
+    if (LG.compositionError(n, comp)) delete comp[role];
+  }
+  for (const r of Object.keys(comp)) if (!comp[r]) delete comp[r];
+  return LG.compositionError(n, comp) ? null : comp;
+}
+
+// Compositions disponibles pour n joueurs (celles qui ne marchent pas à ce nombre sont retirées).
+function compositionsFor(n) {
+  return PRESETS.map((p) => ({ ...p, comp: buildPreset(p, n) })).filter((p) => p.comp);
+}
+
+function suggestedComposition(n) {
+  const list = compositionsFor(n);
+  return (list.find((p) => p.id === "classique") || list[0])?.comp || { loup: 1 };
 }

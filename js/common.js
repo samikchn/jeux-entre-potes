@@ -82,5 +82,39 @@ const Common = (() => {
 
   const onlineConfigured = () => !!(window.SUPABASE_URL && window.SUPABASE_ANON_KEY);
 
+  // Retour au clic : effet visuel, petit « tic » sonore et vibration (Android ; l'iPhone ne
+  // laisse pas les sites vibrer).
+  let audio = null;
+  function tick() {
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      if (audio.state === "suspended") audio.resume();
+      const osc = audio.createOscillator();
+      const gain = audio.createGain();
+      osc.frequency.value = 660;
+      gain.gain.setValueAtTime(0.08, audio.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.06);
+      osc.connect(gain).connect(audio.destination);
+      osc.start();
+      osc.stop(audio.currentTime + 0.06);
+    } catch {
+      // pas de son disponible : l'effet visuel suffit
+    }
+  }
+  document.addEventListener(
+    "pointerdown",
+    (e) => {
+      const el = e.target.closest("button:not(:disabled), .mode, .flip, summary");
+      if (!el) return;
+      el.classList.remove("pressed");
+      void el.offsetWidth; // relance l'animation même sur deux appuis rapides
+      el.classList.add("pressed");
+      setTimeout(() => el.classList.remove("pressed"), 300);
+      if (navigator.vibrate) navigator.vibrate(12);
+      tick();
+    },
+    { passive: true }
+  );
+
   return { playerId, esc, toast, avatar, render, randomCode, joinRoom, onlineConfigured };
 })();
