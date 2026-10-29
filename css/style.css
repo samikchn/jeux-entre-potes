@@ -246,6 +246,35 @@ summary { cursor: pointer; padding: 6px 0; }
 }
 .error { color: #fca5a5; }
 
+/* Loup-Garou */
+body.night {
+  background:
+    radial-gradient(circle at 80% 0%, rgba(96, 165, 250, .25), transparent 40%),
+    radial-gradient(circle at 0% 60%, rgba(30, 64, 175, .3), transparent 45%),
+    #070a18;
+  background-attachment: fixed;
+}
+h3 { font-size: .95rem; margin: 14px 0 8px; color: var(--muted); }
+.team-title { text-transform: uppercase; letter-spacing: .08em; font-size: .8rem; margin-top: 18px; }
+.team-title.loups { color: #fca5a5; }
+.team-title.village { color: #86efac; }
+.team-title.solo { color: #fdba74; }
+.tag.loups { background: rgba(239, 68, 68, .2); color: #fca5a5; }
+.tag.village { background: rgba(34, 197, 94, .2); color: #86efac; }
+.tag.solo { background: rgba(249, 115, 22, .2); color: #fdba74; }
+.stepper .label small { font-size: .75rem; line-height: 1.3; }
+.stepper:not(.on) > span:first-child { filter: grayscale(.8); opacity: .6; }
+.composition .stepper:not(.on) .label small { display: none; }
+.composition .stepper { padding: 5px 0; }
+.role-flip .flip-inner { height: 270px; }
+.face.back.team-loups { border-color: #ef4444; }
+.face.back.team-village { border-color: #22c55e; }
+.face.back.team-solo { border-color: #f97316; }
+.card.task { border-color: rgba(139, 92, 246, .6); box-shadow: 0 0 30px rgba(139, 92, 246, .2); }
+.secret { margin: 6px 0; }
+.script li { margin-bottom: 10px; }
+button.danger { background: linear-gradient(135deg, #dc2626, #f97316); }
+
 .toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
   background: var(--card-solid); border: 1px solid var(--border);
