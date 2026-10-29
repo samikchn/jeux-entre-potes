@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f0c1d">
+  <title>Diagnostic voix</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <style>
+    #log { font-family: ui-monospace, Menlo, monospace; font-size: .78rem; white-space: pre-wrap; word-break: break-word; max-height: 50vh; overflow: auto; }
+    #log .ok { color: #86efac; }
+    #log .err { color: #fca5a5; }
+    .voices button { text-align: left; font-weight: 500; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>🔧 <span class="grad">Diagnostic voix</span></h1>
+
+    <div class="card">
+      <p class="muted">Touche les boutons un par un et note celui qui parle. Si aucun ne parle, fais une capture d'écran du journal en bas et envoie-la.</p>
+      <button id="t1">1. Voix française par défaut</button>
+      <button id="t2" class="secondary">2. Sans préciser de langue</button>
+      <button id="t3" class="secondary">3. Phrase en anglais</button>
+      <button id="t4" class="secondary">4. Bip audio (son du téléphone)</button>
+      <button id="t5" class="secondary">5. Après une annulation (ancien code)</button>
+    </div>
+
+    <div class="card">
+      <h2>Voix françaises installées</h2>
+      <div id="voices" class="voices"><p class="muted">Chargement…</p></div>
+    </div>
+
+    <div class="card">
+      <h2>Journal</h2>
+      <div id="log"></div>
+      <button class="secondary" id="copy">Copier le journal</button>
+    </div>
+
+    <p class="center"><a href="./" class="muted">← Retour au Loup-Garou</a></p>
+  </main>
+
+  <script>
+    const logEl = document.getElementById("log");
+    const t0 = Date.now();
+    function log(msg, cls = "") {
+      const line = document.createElement("div");
+      line.className = cls;
+      line.textContent = `[${((Date.now() - t0) / 1000).toFixed(1)}s] ${msg}`;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    const synth = window.speechSynthesis;
+    log("Appareil : " + navigator.userAgent);
+    log("speechSynthesis disponible : " + !!synth, synth ? "ok" : "err");
+
+    // Lance une phrase et note chaque événement (début, fin, erreur, ou rien du tout).
+    function test(label, setup) {
+      if (!synth) return log("Pas de synthèse vocale dans ce navigateur.", "err");
+      log(`— ${label} — (speaking=${synth.speaking}, pending=${synth.pending}, paused=${synth.paused})`);
+      const u = new SpeechSynthesisUtterance("Bonjour, je suis le narrateur du village.");
+      setup(u);
+      window._u = u; // garde une référence pour Safari
+      let started = false;
+      u.onstart = () => { started = true; log("▶ la voix a commencé", "ok"); };
+      u.onend = () => log("■ la voix a fini", "ok");
+      u.onerror = (e) => log("✖ erreur : " + (e.error || "inconnue"), "err");
+      synth.speak(u);
+      log(`appel envoyé (voix : ${u.voice ? u.voice.name : "par défaut"}, langue : ${u.lang || "aucune"})`);
+      setTimeout(() => {
+        if (!started) log(`⚠ rien n'a démarré après 3 s (speaking=${synth.speaking}, pending=${synth.pending}, paused=${synth.paused})`, "err");
+      }, 3000);
+    }
+
+    document.getElementById("t1").onclick = () => test("Test 1 : fr-FR", (u) => (u.lang = "fr-FR"));
+    document.getElementById("t2").onclick = () => test("Test 2 : sans langue", () => {});
+    document.getElementById("t3").onclick = () => test("Test 3 : anglais", (u) => {
+      u.lang = "en-US";
+      u.text = "Hello, I am the narrator.";
+    });
+    document.getElementById("t5").onclick = () => {
+      synth.cancel();
+      test("Test 5 : cancel() puis speak()", (u) => (u.lang = "fr-FR"));
+    };
+
+    document.getElementById("t4").onclick = () => {
+      log("— Test 4 : bip audio —");
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        osc.frequency.value = 520;
+        osc.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.4);
+        log("bip joué (état audio : " + ctx.state + ")", "ok");
+      } catch (e) {
+        log("✖ bip impossible : " + e.message, "err");
+      }
+    };
+
+    function listVoices() {
+      if (!synth) return;
+      const all = synth.getVoices();
+      const fr = all.filter((v) => (v.lang || "").toLowerCase().startsWith("fr"));
+      log(`voix trouvées : ${all.length} au total, ${fr.length} en français`);
+      const box = document.getElementById("voices");
+      box.innerHTML = fr.length ? "" : `<p class="muted">Aucune voix française listée par le navigateur.</p>`;
+      fr.forEach((v) => {
+        const b = document.createElement("button");
+        b.className = "secondary";
+        b.textContent = `🔊 ${v.name} (${v.lang})${v.default ? " · par défaut" : ""}${v.localService ? "" : " · en ligne"}`;
+        b.onclick = () => test("Voix " + v.name, (u) => {
+          u.voice = v;
+          u.lang = v.lang;
+        });
+        box.appendChild(b);
+      });
+    }
+    if (synth) {
+      listVoices();
+      synth.addEventListener?.("voiceschanged", () => {
+        log("la liste des voix a changé");
+        listVoices();
+      });
+    }
+
+    document.getElementById("copy").onclick = () => {
+      navigator.clipboard?.writeText(logEl.innerText).then(() => log("journal copié", "ok"), () => log("copie impossible", "err"));
+    };
+  </script>
+</body>
+</html>

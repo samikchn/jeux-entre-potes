@@ -329,6 +329,7 @@ function narrationView() {
           : `<div class="row"><input id="aikey" type="password" placeholder="sk-ant-…" autocomplete="off"><button onclick="A.saveAiKey()">OK</button></div>`}
       </details>
       <button class="secondary" onclick="A.testVoice()">🔊 Tester la voix</button>
+      <p class="center"><a href="diagnostic-voix.html">🔧 La voix ne marche pas ? Diagnostic</a></p>
       <p class="muted">Montez le son du téléphone et posez-le au centre de la table. Sur iPhone, désactivez le mode silencieux (bouton sur le côté), sinon la voix reste muette.</p>` : ""}
   `);
 }
