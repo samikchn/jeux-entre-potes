@@ -84,6 +84,17 @@ const Common = (() => {
 
   // Retour au clic : effet visuel, petit « tic » sonore et vibration (Android ; l'iPhone ne
   // laisse pas les sites vibrer).
+  // Sur iPhone, le son d'un site est coupé par le mode silencieux, sauf s'il se déclare
+  // « lecteur » comme une app de musique (Audio Session API de Safari).
+  function playbackAudio() {
+    try {
+      if (navigator.audioSession && navigator.audioSession.type !== "playback") navigator.audioSession.type = "playback";
+    } catch {
+      // navigateur sans cette API : rien à faire
+    }
+  }
+  playbackAudio();
+
   let audio = null;
   function tick() {
     try {
@@ -106,6 +117,7 @@ const Common = (() => {
     "pointerdown",
     (e) => {
       const el = e.target.closest("button:not(:disabled), .mode, .flip, summary");
+      playbackAudio();
       if (!el) return;
       el.classList.remove("pressed");
       void el.offsetWidth; // relance l'animation même sur deux appuis rapides
@@ -119,5 +131,5 @@ const Common = (() => {
     { passive: true }
   );
 
-  return { playerId, esc, toast, avatar, render, randomCode, joinRoom, onlineConfigured };
+  return { playerId, esc, toast, avatar, render, randomCode, joinRoom, onlineConfigured, playbackAudio };
 })();

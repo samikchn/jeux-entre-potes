@@ -24,6 +24,8 @@
       <button id="t3" class="secondary">3. Phrase en anglais</button>
       <button id="t4" class="secondary">4. Bip audio (son du téléphone)</button>
       <button id="t5" class="secondary">5. Après une annulation (ancien code)</button>
+      <button id="t6">6. Mode lecture (ignore le mode silencieux) + voix + bip</button>
+      <p class="muted">Le journal indique si le téléphone a lancé la voix, mais pas si tu l'entends : note bien ce que tu entends pour chaque test.</p>
     </div>
 
     <div class="card">
@@ -84,20 +86,46 @@
       test("Test 5 : cancel() puis speak()", (u) => (u.lang = "fr-FR"));
     };
 
-    document.getElementById("t4").onclick = () => {
-      log("— Test 4 : bip audio —");
+    function beep() {
       try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        ctx.resume();
         const osc = ctx.createOscillator();
         osc.frequency.value = 520;
         osc.connect(ctx.destination);
         osc.start();
         osc.stop(ctx.currentTime + 0.4);
-        log("bip joué (état audio : " + ctx.state + ")", "ok");
+        log("bip joué (état audio : " + ctx.state + ")", ctx.state === "running" ? "ok" : "err");
+        setTimeout(() => log("état audio après 0,5 s : " + ctx.state), 500);
       } catch (e) {
         log("✖ bip impossible : " + e.message, "err");
       }
+    }
+
+    document.getElementById("t4").onclick = () => {
+      log("— Test 4 : bip audio —");
+      beep();
     };
+
+    document.getElementById("t6").onclick = () => {
+      log("— Test 6 : mode lecture —");
+      if (navigator.audioSession) {
+        try {
+          navigator.audioSession.type = "playback";
+          log(`session audio : type=${navigator.audioSession.type}, état=${navigator.audioSession.state}`, "ok");
+        } catch (e) {
+          log("✖ impossible de passer en mode lecture : " + e.message, "err");
+        }
+      } else {
+        log("✖ ce navigateur ne connaît pas navigator.audioSession", "err");
+      }
+      beep();
+      setTimeout(() => test("Test 6 : voix en mode lecture", (u) => (u.lang = "fr-FR")), 600);
+    };
+
+    log(navigator.audioSession
+      ? `session audio disponible (type=${navigator.audioSession.type}, état=${navigator.audioSession.state})`
+      : "session audio : non disponible dans ce navigateur");
 
     function listVoices() {
       if (!synth) return;

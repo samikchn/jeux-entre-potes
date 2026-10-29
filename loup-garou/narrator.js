@@ -33,6 +33,7 @@ const Narrator = (() => {
   function speak(text) {
     if (!text) return Promise.resolve();
     if (muted || !window.speechSynthesis) return new Promise((r) => setTimeout(r, 1200));
+    Common.playbackAudio();
     // Annuler juste avant de parler empêche Safari de lire la phrase suivante : seulement si besoin.
     if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
     return new Promise((resolve) => {
