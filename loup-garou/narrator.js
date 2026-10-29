@@ -11,14 +11,22 @@ const Narrator = (() => {
 
   let muted = localStorage.getItem("lg-muted") === "1";
 
-  // Sur iPhone/iPad, iOS liste aussi des voix non téléchargées : en choisir une rend la voix
-  // muette. On laisse donc iOS prendre sa voix française par défaut (lang = fr-FR).
+  // Voix choisie par l'utilisateur (nom), sinon : voix française par défaut. Sur iPhone, on ne
+  // choisit jamais seul : iOS liste aussi des voix non téléchargées, qui restent muettes.
   const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   let frVoice = null;
+  const frenchVoices = () =>
+    window.speechSynthesis ? speechSynthesis.getVoices().filter((v) => v.lang && v.lang.toLowerCase().startsWith("fr")) : [];
   function pickVoice() {
-    if (isIOS || !window.speechSynthesis) return;
-    const fr = speechSynthesis.getVoices().filter((v) => v.lang && v.lang.toLowerCase().startsWith("fr") && v.localService);
-    frVoice = fr.find((v) => v.default) || fr[0] || null;
+    const fr = frenchVoices();
+    const chosen = localStorage.getItem("lg-voice");
+    frVoice = fr.find((v) => v.name === chosen) || (isIOS ? null : fr.find((v) => v.localService && v.default) || fr.find((v) => v.localService) || null);
+    window.dispatchEvent(new Event("narrator-voices"));
+  }
+  function setVoice(name) {
+    if (name) localStorage.setItem("lg-voice", name);
+    else localStorage.removeItem("lg-voice");
+    pickVoice();
   }
   if (window.speechSynthesis) {
     pickVoice();
@@ -113,5 +121,8 @@ const Narrator = (() => {
     }
   }
 
-  return { speak, stop, toggleMute, isMuted: () => muted, started: () => lastStarted, isIOS, apiKey, setApiKey, tell };
+  return {
+    speak, stop, toggleMute, isMuted: () => muted, started: () => lastStarted, isIOS, apiKey, setApiKey, tell,
+    voices: frenchVoices, setVoice, voiceName: () => localStorage.getItem("lg-voice") || "",
+  };
 })();

@@ -5,7 +5,6 @@ const Auto = (() => {
   // Appels de la nuit, dans l'ordre. `step` : étape du moteur (voir engine.js).
   const CALLS = [
     { kind: "cupidon", step: 1, first: true, wake: "Cupidon se réveille. Prends le téléphone et choisis les deux amoureux.", sleep: "Cupidon se rendort." },
-    { kind: "amoureux", role: "cupidon", step: 1, first: true, emoji: "💘", name: "Les amoureux", wake: "Les amoureux se réveillent et regardent le téléphone pour se reconnaître.", sleep: "Les amoureux se rendorment." },
     { kind: "enfant", step: 1, first: true, wake: "L'Enfant sauvage se réveille et choisit son modèle.", sleep: "L'Enfant sauvage se rendort." },
     { kind: "garde", step: 1, wake: "Le Garde se réveille et choisit qui protéger cette nuit.", sleep: "Le Garde se rendort." },
     { kind: "voyante", step: 1, wake: "La Voyante se réveille. Prends le téléphone et désigne le joueur dont tu veux connaître le rôle.", sleep: "La Voyante se rendort." },
@@ -20,7 +19,8 @@ const Auto = (() => {
     { kind: "sorciere", step: 3, wake: "La Sorcière se réveille. Prends le téléphone : tu vas voir la victime de cette nuit.", sleep: "La Sorcière se rendort." },
   ];
 
-  const st = { screen: null, call: null, real: false, actor: null, viewer: null, result: "", story: "", peek: null, run: 0 };
+  // seen : nombre d'infos secrètes (game.priv) déjà montrées à chaque joueur.
+  const st = { screen: null, call: null, real: false, actor: null, viewer: null, result: "", story: "", peek: null, run: 0, seen: {}, secretFor: null };
   let resolveTap = null;
 
   const g = () => S.game;
@@ -46,6 +46,7 @@ const Auto = (() => {
 
   async function start() {
     const token = ++st.run;
+    st.seen = {};
     try {
       await intro(token);
       while (g().phase !== "end") {
@@ -96,7 +97,6 @@ const Auto = (() => {
       show("dusk", { story: "" });
       await say(token, "La nuit tombe sur le village. Tout le monde ferme les yeux.");
     }
-    const wolvesBefore = new Set(LG.alive(game).filter((p) => p.wolf).map((p) => p.id));
     const present = new Set(game.players.map((p) => p.role));
     for (const call of CALLS) {
       if (call.first && game.night !== 1) continue;
@@ -105,7 +105,32 @@ const Auto = (() => {
       await doCall(token, call);
     }
     while (game.phase === "night") LG.advance(game);
-    await dawn(token, wolvesBefore);
+    await dawn(token);
+  }
+
+  const unseen = (pid) => (g().priv[pid] || []).slice(st.seen[pid] || 0);
+  const markSeen = (pid) => (st.seen[pid] = (g().priv[pid] || []).length);
+
+  // Tour de table : chacun prend le téléphone à son tour et lit son message secret (amoureux,
+  // infection…). Tout le monde passe, même sans message, pour ne rien trahir.
+  async function secretRound(token, force) {
+    const game = g();
+    const players = game.seats.map((id) => LG.P(game, id)).filter((p) => p.alive);
+    if (game.phase !== "day") return;
+    if (!force && !players.some((p) => unseen(p.id).length)) return;
+    show("secret-intro");
+    const ready = waitTap();
+    await say(token, "Avant le débat, passez-vous le téléphone dans l'ordre de la table. Chacun lit son message secret, puis le donne à son voisin.");
+    await step(token, ready);
+    for (const p of players) {
+      show("secret-pass", { secretFor: p.id });
+      await step(token, waitTap());
+      show("secret");
+      await step(token, waitTap());
+      markSeen(p.id);
+    }
+    show("secret-done");
+    await say(token, "Tout le monde a lu son message. Le débat peut commencer.");
   }
 
   function tasksFor(kind) {
@@ -151,7 +176,6 @@ const Auto = (() => {
   function act(kind, data) {
     const game = g();
     const before = LG.pending(game).filter((t) => t.kind === kind).map((t) => t.key);
-    const privBefore = (game.priv[st.actor] || []).length;
     if (kind === "wolves") {
       for (const t of LG.tasks(game).filter((t) => t.kind === "wolves")) LG.act(game, t.pid, "wolves", data);
     } else {
@@ -162,8 +186,11 @@ const Auto = (() => {
       toast("Choix impossible, essaie encore.");
       return render();
     }
-    st.result = (game.priv[st.actor] || []).slice(privBefore).join(" ");
+    // Montre tout ce que cette personne n'a pas encore lu (résultat du pouvoir, mais aussi
+    // par exemple son message d'amoureux), puisqu'elle est seule avec le téléphone.
+    st.result = st.actor && kind !== "wolves" ? unseen(st.actor).join(" ") : "";
     if (kind === "cupidon" && !st.result) st.result = "💘 C'est fait.";
+    if (st.actor && kind !== "wolves") markSeen(st.actor);
     tap(true);
   }
 
@@ -174,12 +201,10 @@ const Auto = (() => {
     });
   }
 
-  async function dawn(token, wolvesBefore) {
+  async function dawn(token) {
     const game = g();
     const facts = deathFacts(game.deaths);
     const news = game.news.slice();
-    const changed = LG.alive(game).some((p) => p.wolf && !wolvesBefore.has(p.id));
-    if (changed) news.push("Quelque chose a changé cette nuit… Pendant le débat, chacun peut revoir discrètement son rôle sur le téléphone.");
     show("dawn", { story: "" });
     const next = waitTap();
     const plain = ["Le village se réveille.", ...facts, ...news].join(" ");
@@ -190,6 +215,9 @@ const Auto = (() => {
   }
 
   async function day(token) {
+    // Le 1er jour avec Cupidon, on fait toujours le tour : les amoureux doivent se découvrir.
+    const firstCupidDay = g().night === 1 && g().players.some((p) => p.role === "cupidon");
+    await secretRound(token, firstCupidDay);
     show("day", { peek: null, viewer: null });
     const voted = waitTap();
     await say(token, "Débattez, puis votez à main levée. Touchez ensuite le joueur éliminé sur l'écran.");
@@ -258,11 +286,24 @@ const Auto = (() => {
       }
       case "nopower":
         return head + card(`<p class="center">Ce rôle ne peut pas agir cette nuit.<br>Repose le téléphone et ferme les yeux.</p>`);
-      case "lovers": {
-        const [a, b] = game.lovers.map((id) => esc(LG.P(game, id).name));
-        return head + card(`<div class="center"><div style="font-size:3.5rem">💘</div><h2>Les amoureux</h2><p class="word" style="font-size:1.6rem">${a} & ${b}</p>
-          <button onclick="Auto.tap(true)">On s'est reconnus</button></div>`);
+      case "secret-intro":
+        return head + pill(`☀️ Jour ${game.night}`) + card(`<div class="center"><div style="font-size:3rem">📨</div>
+          <h2>Messages secrets</h2><p>Passez-vous le téléphone dans l'ordre de la table. Chacun lit son message, puis le donne à son voisin.</p></div>
+          <button onclick="Auto.tap(true)">C'est parti</button>`);
+      case "secret-pass": {
+        const p = LG.P(game, st.secretFor);
+        return head + card(`<div class="reveal">${avatar(p.name, true)}<p>Passe le téléphone à</p><div class="who">${esc(p.name)}</div></div>
+          <button onclick="Auto.tap(true)">C'est moi, voir mon message</button>`);
       }
+      case "secret": {
+        const p = LG.P(game, st.secretFor);
+        const msgs = unseen(p.id);
+        return head + card(`<h2>🤫 ${esc(p.name)}, ton message</h2>
+          ${msgs.length ? msgs.map((m) => `<p class="secret">${esc(m)}</p>`).join("") : `<p>Rien de nouveau pour toi.</p><p class="muted">Fais comme si tu lisais quelque chose 😉</p>`}
+          <button onclick="Auto.tap(true)">Cacher et passer au suivant</button>`);
+      }
+      case "secret-done":
+        return head + card(`<p class="center">✅ Tout le monde a lu son message.</p>`);
       case "task":
         return head + pill(`🌙 Nuit ${game.night}`) + (st.call.kind === "wolves" ? wolvesView() : taskView(LG.tasks(game).find((t) => t.pid === st.actor && t.kind === st.call.kind)));
       case "result":
@@ -270,7 +311,7 @@ const Auto = (() => {
           <button onclick="Auto.tap(true)">J'ai fini, je repose le téléphone</button>`);
       case "dawn":
         return head + pill(`☀️ Jour ${game.night}`) + newsView("🌅 Cette nuit…") + (st.story ? card(storyView()) : "") +
-          `<button onclick="Auto.tap(true)">🗣️ Passer au débat</button>`;
+          `<button onclick="Auto.tap(true)">Continuer</button>`;
       case "day":
         return head + pill(`☀️ Jour ${game.night}`) + dayView();
       case "verdict":
@@ -333,6 +374,7 @@ const Auto = (() => {
     actor: () => st.actor,
     viewer: () => st.viewer,
     screen: () => st.screen,
+    unseenCount: (pid) => unseen(pid).length,
     isRealCall: () => st.real,
     tap(v) {
       tap(v);
@@ -351,6 +393,7 @@ const Auto = (() => {
     },
     peekConfirm() {
       st.viewer = st.peek;
+      markSeen(st.viewer);
       render();
     },
     mute() {

@@ -307,6 +307,20 @@ function revealView() {
     ${leaveButton()}`;
 }
 
+// Liste des voix françaises du téléphone. Les voix « améliorée » / « premium » sont bien plus naturelles.
+function voicePicker() {
+  const voices = Narrator.voices();
+  if (!voices.length) return "";
+  const current = Narrator.voiceName();
+  return `
+    <label class="muted" for="voice">Voix du narrateur</label>
+    <select id="voice" onchange="A.setVoice(this.value)">
+      <option value="">Voix par défaut</option>
+      ${voices.map((v) => `<option value="${esc(v.name)}" ${v.name === current ? "selected" : ""}>${esc(v.name)} (${esc(v.lang)})</option>`).join("")}
+    </select>
+    <p class="muted" style="font-size:.8rem">💡 Pour une voix plus naturelle sur iPhone : Réglages › Accessibilité › Contenu énoncé › Voix › Français, télécharge une voix « améliorée » ou « premium », puis choisis-la ici.</p>`;
+}
+
 // Choix du narrateur pour le mode un seul téléphone.
 function narrationView() {
   const opt = (mode, emoji, title, desc) => `
@@ -328,6 +342,7 @@ function narrationView() {
           ? `<p>✅ Clé enregistrée (…${esc(key.slice(-4))})</p><button class="secondary" onclick="A.forgetAiKey()">Supprimer la clé</button>`
           : `<div class="row"><input id="aikey" type="password" placeholder="sk-ant-…" autocomplete="off"><button onclick="A.saveAiKey()">OK</button></div>`}
       </details>
+      ${voicePicker()}
       <button class="secondary" onclick="A.testVoice()">🔊 Tester la voix</button>
       <p class="center"><a href="diagnostic-voix.html">🔧 La voix ne marche pas ? Diagnostic</a></p>
       <p class="muted">Montez le son du téléphone et posez-le au centre de la table. Sur iPhone, désactivez le mode silencieux (bouton sur le côté), sinon la voix reste muette.</p>` : ""}
@@ -581,6 +596,11 @@ const A = {
     render();
   },
 
+  setVoice(name) {
+    Narrator.setVoice(name);
+    Narrator.speak("Voici ma voix.");
+  },
+
   openNarrator() {
     if (confirm("Es-tu le narrateur ? Les rôles de tous les joueurs vont s'afficher.")) {
       S.narratorOpen = true;
@@ -806,5 +826,10 @@ function resetSelections() {
   S.sel = [];
   S.witch = { heal: null, kill: null };
 }
+
+// Les voix du téléphone arrivent après le chargement : on redessine le choix de la voix.
+window.addEventListener("narrator-voices", () => {
+  if (S.mode === "local" && !S.game) render();
+});
 
 render();
