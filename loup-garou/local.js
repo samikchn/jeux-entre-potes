@@ -150,14 +150,58 @@ const Auto = (() => {
       else await say(token, "La nuit tombe sur le village. Tout le monde ferme les yeux.");
     }
     const present = new Set(game.players.map((p) => p.role));
-    for (const call of CALLS) {
-      if (call.first && game.night !== 1) continue;
-      if (call.even && game.night % 2 !== 0) continue;
-      if (!present.has(call.role || call.kind) && !(call.kind === "wolves")) continue;
-      await doCall(token, call);
+    if (S.discreet) {
+      await tableNight(token, present);
+    } else {
+      for (const call of CALLS) {
+        if (call.first && game.night !== 1) continue;
+        if (call.even && game.night % 2 !== 0) continue;
+        if (!present.has(call.role || call.kind) && !(call.kind === "wolves")) continue;
+        await doCall(token, call);
+      }
     }
     while (game.phase === "night") LG.advance(game);
     await dawn(token);
+  }
+
+  // Nuit discrète : le téléphone fait le tour de la table et TOUT LE MONDE le tient. Ceux qui
+  // ont un pouvoir agissent ; les autres font un faux choix. Impossible de deviner qui a joué.
+  // Un tour par étape du moteur (les suites des loups et la sorcière dépendent du 1er tour).
+  async function tableNight(token, present) {
+    const game = g();
+    const rounds = [1];
+    if (["grandloup", "infect", "loupblanc"].some((r) => present.has(r))) rounds.push(2);
+    if (present.has("sorciere")) rounds.push(3);
+    for (const [i, stepNo] of rounds.entries()) {
+      while (game.phase === "night" && game.step < stepNo) LG.advance(game);
+      show("round-intro", { round: i + 1, rounds: rounds.length });
+      const go = waitTap();
+      await say(token, i === 0
+        ? "Le téléphone va faire le tour de la table. Quand tu le reçois, ouvre les yeux, fais ce qu'il t'indique, puis passe-le à ton voisin et referme les yeux."
+        : "Encore un tour de table.");
+      await step(token, go);
+      for (const p of game.seats.map((id) => LG.P(game, id)).filter((q) => q.alive)) {
+        show("pass", { passTo: p.id });
+        await step(token, waitTap());
+        st.actor = p.id;
+        const mine = game.phase === "night" ? LG.pending(game).filter((t) => t.pid === p.id) : [];
+        for (const t of mine) {
+          if (game.phase !== "night" || !LG.pending(game).some((x) => x.key === t.key)) continue;
+          show("task", { call: { kind: t.kind }, real: true, result: "" });
+          await step(token, waitTap());
+          if (st.result) {
+            show("result");
+            await step(token, waitTap());
+          }
+        }
+        if (!mine.length) {
+          show("decoy");
+          await step(token, waitTap());
+        }
+      }
+    }
+    show("dusk", { story: "" });
+    await say(token, "Tout le monde a joué. Fermez tous les yeux.");
   }
 
   const unseen = (pid) => (g().priv[pid] || []).slice(st.seen[pid] || 0);
@@ -227,8 +271,10 @@ const Auto = (() => {
   // Applique le choix fait sur l'écran par la personne qui a le téléphone.
   function act(kind, data) {
     const game = g();
-    const before = LG.pending(game).filter((t) => t.kind === kind).map((t) => t.key);
-    if (kind === "wolves") {
+    // Nuit discrète : chaque loup vote pour lui-même quand il a le téléphone.
+    const solo = S.discreet || kind !== "wolves";
+    const before = LG.pending(game).filter((t) => t.kind === kind && (!solo || t.pid === st.actor)).map((t) => t.key);
+    if (!solo) {
       for (const t of LG.tasks(game).filter((t) => t.kind === "wolves")) LG.act(game, t.pid, "wolves", data);
     } else {
       LG.act(game, st.actor, kind, data);
@@ -388,6 +434,23 @@ const Auto = (() => {
           <p class="muted">Les autres, gardez les yeux fermés.</p></div>
           <button onclick="Auto.tap(true)">✋ J'ai le téléphone</button>`);
       }
+      case "round-intro":
+        return head + pill(`🌙 Nuit ${game.night}`) + card(`<div class="center"><div style="font-size:3rem">🔄</div>
+          <h2>Tour de table ${st.rounds > 1 ? `${st.round} / ${st.rounds}` : ""}</h2>
+          <p>Chacun prend le téléphone à son tour, même sans pouvoir : personne ne peut deviner qui agit.</p></div>
+          <button onclick="Auto.tap(true)">C'est parti</button>`);
+      case "pass": {
+        const p = LG.P(game, st.passTo);
+        return head + pill(`🌙 Nuit ${game.night}`) + card(`<div class="reveal">${avatar(p.name, true)}<p>Ferme les yeux et passe le téléphone à</p><div class="who">${esc(p.name)}</div></div>
+          <button onclick="Auto.tap(true)">C'est moi</button>`);
+      }
+      case "decoy": {
+        const p = LG.P(game, st.actor);
+        return head + pill(`🌙 Nuit ${game.night}`) + card(`
+          <h2>🌙 ${esc(p.name)}</h2>
+          <p>Rien à faire pour toi cette nuit. Pour brouiller les pistes, touche le joueur que tu soupçonnes le plus.</p>
+          ${tiles(LG.alive(game).filter((q) => q.id !== p.id), "Auto.tap")}`, "task");
+      }
       case "nopower":
         return head + card(`<p class="center">Ce rôle ne peut pas agir cette nuit.<br>Repose le téléphone et ferme les yeux.</p>`);
       case "secret-intro":
@@ -434,10 +497,15 @@ const Auto = (() => {
   function wolvesView() {
     const game = g();
     const pack = LG.alive(game).filter((p) => p.wolf).map((p) => esc(p.name)).join(", ");
+    // Nuit discrète : chaque loup vote seul et voit les votes déjà faits par la meute.
+    const votes = LG.tasks(game).filter((t) => t.kind === "wolves" && game.actions[t.key]?.target)
+      .map((t) => `${esc(LG.P(game, t.pid).name)} → ${esc(LG.P(game, game.actions[t.key].target).name)}`);
     return card(`
       <h2>🐺 Les Loups-garous</h2>
       <p>La meute : <b>${pack}</b></p>
-      <p class="muted">Mettez-vous d'accord en silence, puis touchez la victime.</p>
+      ${S.discreet
+        ? `${votes.length ? `<p>Votes de la meute : ${votes.join(", ")}</p>` : ""}<p class="muted">Vote pour la victime. En cas d'égalité entre les loups, tirage au sort.</p>`
+        : `<p class="muted">Mettez-vous d'accord en silence, puis touchez la victime.</p>`}
       ${tiles(LG.targetsForWolves(game), "Auto.wolfPick")}`, "task");
   }
 

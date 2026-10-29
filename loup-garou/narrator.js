@@ -2,7 +2,8 @@
 // intelligence artificielle optionnelle (Gemini gratuit ou Claude) pour un narrateur qui improvise.
 const Narrator = (() => {
   const CLAUDE_MODEL = "claude-opus-5-5";
-  const GEMINI_MODEL = "gemini-flash-latest";
+  // Flash-Lite répond en ~1 s ; Flash « réfléchit » d'abord et peut mettre près d'une minute.
+  const GEMINI_MODEL = "gemini-flash-lite-latest";
   const SYSTEM =
     "Tu es le narrateur d'une partie de Loup-Garou entre amis, autour d'une table. " +
     "Réponds en 2 ou 3 phrases courtes en français, à lire à voix haute : ton mystérieux, un peu drôle. " +
@@ -140,7 +141,7 @@ const Narrator = (() => {
     const key = apiKey();
     if (!key) return null;
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15000);
+    const timer = setTimeout(() => ctrl.abort(), 30000);
     try {
       const call = provider() === "claude" ? callClaude : callGemini;
       const text = (await call(key, system, messages, ctrl.signal) || "").replace(/[*#_`]/g, "").trim();

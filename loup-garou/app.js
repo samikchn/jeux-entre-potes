@@ -19,6 +19,7 @@ const S = {
   narration: localStorage.getItem("lg-narration") || "voix", // mode local : "ia", "voix" ou "humain"
   narratorOpen: false,
   hideRoles: localStorage.getItem("lg-obscur") === "1", // mode obscur
+  discreet: localStorage.getItem("lg-discret") !== "0", // nuit : le téléphone fait le tour de la table
   showRole: false,
   sel: [], // sélection multiple (Cupidon, Joueur de flûte)
   witch: { heal: null, kill: null },
@@ -374,6 +375,12 @@ function narrationView() {
     </div>
     ${S.narration !== "humain" ? `
       ${ia ? aiSettings() : `<details id="ai"><summary><b>🤖 Annonces racontées par une IA (optionnel)</b></summary>${aiSettings()}</details>`}
+      <button class="tile ${S.discreet ? "selected" : ""}" style="width:100%;align-items:flex-start;text-align:left;margin:10px 0" onclick="A.toggleDiscreet()">
+        <b>🤫 Nuit discrète ${S.discreet ? "activée" : "désactivée"}</b>
+        <span class="muted" style="font-weight:400;font-size:.85rem">${S.discreet
+          ? "La nuit, le téléphone fait le tour de la table : tout le monde le tient, personne ne sait qui a un pouvoir."
+          : "La voix appelle chaque rôle, qui prend le téléphone (plus rapide, mais les voisins peuvent le remarquer)."}</span>
+      </button>
       ${voicePicker()}
       <button class="secondary" onclick="A.testVoice()">🔊 Tester la voix</button>
       ${ia ? `<button class="secondary" onclick="A.testMic()">🎤 Tester le micro</button>` : ""}
@@ -630,6 +637,12 @@ const A = {
   setNarration(mode) {
     S.narration = mode;
     localStorage.setItem("lg-narration", mode);
+    render();
+  },
+
+  toggleDiscreet() {
+    S.discreet = !S.discreet;
+    localStorage.setItem("lg-discret", S.discreet ? "1" : "0");
     render();
   },
 

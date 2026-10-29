@@ -36,6 +36,7 @@ La description de chaque rôle est dans le jeu (« Les règles et les rôles »)
 
 - **Narrateur : l'app** — une voix (synthèse vocale du navigateur, gratuite) appelle chaque rôle la nuit ; la personne appelée prend le téléphone, agit, puis le repose. Les rôles absents ou morts sont appelés quand même pour ne rien trahir. Le matin, la voix annonce les morts ; le jour, on vote à main levée et on touche le joueur éliminé. Chacun peut revoir discrètement son rôle pendant le débat.
 - **Narrateur : une IA** — même déroulé, mais une IA (Gemini, gratuit avec une clé Google AI Studio, ou Claude, payant) improvise toute la narration, se souvient de la partie, anime le débat et répond quand on lui parle (bouton 🎤, reconnaissance vocale du téléphone). Elle ne reçoit que les informations publiques : jamais les rôles secrets des vivants. La clé reste sur le téléphone (`loup-garou/narrator.js`), jamais dans le repo.
+- **Nuit discrète** (par défaut) : au lieu d'appeler chaque rôle, le téléphone fait le tour de la table et tout le monde le tient ; ceux qui n'ont rien à faire désignent un suspect « pour brouiller les pistes ». Personne ne peut deviner qui a un pouvoir.
 - Avant le débat, un **tour des messages secrets** : chacun prend le téléphone et lit son message (amoureux, infection…), « rien de nouveau » pour les autres.
 
 **Mode obscur** (tous les modes) : les rôles des joueurs morts ne sont pas révélés. Les morts peuvent voir tous les rôles (onglet « Rôles (réservé aux morts) » sur un seul téléphone, automatiquement en ligne).
