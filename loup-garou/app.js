@@ -57,6 +57,8 @@ function render() {
   const g = S.game;
   const localNight = S.narration === "voix" && S.reveal >= (g?.players.length || 0);
   document.body.classList.toggle("night", g?.phase === "night" && (S.mode !== "local" || localNight));
+  if (S.mode === "local" && S.narration === "voix") document.body.dataset.voice = "1";
+  else delete document.body.dataset.voice;
   const key = [S.mode, g?.phase, g?.night, g?.step, S.reveal, !!g].join("|");
   Common.render(document.getElementById("app"), view(), key);
 }
@@ -603,9 +605,21 @@ const A = {
   },
 
   async testVoice() {
-    const story = Narrator.apiKey() ? await Narrator.tell("Présente-toi en une phrase comme narrateur de la partie.") : null;
-    if (Narrator.apiKey() && !story) toast("IA indisponible : " + (Narrator.tell.lastError || "erreur inconnue"));
-    Narrator.speak(story || "Bonsoir. Je serai votre narrateur cette nuit.");
+    if (Narrator.isMuted()) Narrator.toggleMute();
+    // La phrase part tout de suite, dans l'appui : c'est ce qui autorise la voix sur iPhone.
+    const spoken = Narrator.speak("Bonsoir. Je serai votre narrateur cette nuit.");
+    setTimeout(() => {
+      if (!Narrator.started()) {
+        toast(Narrator.isIOS
+          ? "La voix n'a pas démarré. Vérifie le mode silencieux, puis Réglages › Accessibilité › Contenu énoncé › Voix › Français."
+          : "La voix n'a pas démarré. Vérifie le volume et qu'une voix française est installée.");
+      }
+    }, 2500);
+    if (!Narrator.apiKey()) return;
+    await spoken;
+    const story = await Narrator.tell("Présente-toi en une phrase comme narrateur de la partie.");
+    if (story) Narrator.speak(story);
+    else toast("IA indisponible : " + (Narrator.tell.lastError || "erreur inconnue"));
   },
 
   // Retourne la carte sans tout redessiner, pour garder l'animation.

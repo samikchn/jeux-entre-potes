@@ -88,7 +88,8 @@ const Common = (() => {
   function tick() {
     try {
       audio = audio || new (window.AudioContext || window.webkitAudioContext)();
-      if (audio.state === "suspended") audio.resume();
+      // Sur iPhone, la voix du narrateur « interrompt » le son : on le relance à chaque appui.
+      if (audio.state !== "running") audio.resume();
       const osc = audio.createOscillator();
       const gain = audio.createGain();
       osc.frequency.value = 660;
@@ -111,7 +112,9 @@ const Common = (() => {
       el.classList.add("pressed");
       setTimeout(() => el.classList.remove("pressed"), 300);
       if (navigator.vibrate) navigator.vibrate(12);
-      tick();
+      // Pas de « tic » quand un narrateur vocal est actif : sur iPhone, le son des bruitages
+      // et la voix se gênent.
+      if (!document.body.dataset.voice) tick();
     },
     { passive: true }
   );

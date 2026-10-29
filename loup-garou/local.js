@@ -82,6 +82,9 @@ const Auto = (() => {
   async function intro(token) {
     const names = g().players.map((p) => p.name).join(", ");
     show("dusk");
+    // Première phrase lancée directement par l'appui (obligatoire pour la voix sur iPhone),
+    // avant d'attendre une éventuelle réponse de l'IA.
+    await say(token, "La partie commence.");
     await announce(token,
       `Début de la partie avec ${g().players.length} joueurs : ${names}. Souhaite la bienvenue au village et annonce que la première nuit tombe et que tout le monde ferme les yeux.`,
       "Bienvenue au village. La première nuit tombe. Tout le monde ferme les yeux.");

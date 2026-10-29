@@ -10,46 +10,39 @@ const Narrator = (() => {
     "Pas de titre, pas de liste, pas d'emoji.";
 
   let muted = localStorage.getItem("lg-muted") === "1";
-  let frVoice = null;
 
+  // Sur iPhone/iPad, iOS liste aussi des voix non téléchargées : en choisir une rend la voix
+  // muette. On laisse donc iOS prendre sa voix française par défaut (lang = fr-FR).
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  let frVoice = null;
   function pickVoice() {
-    const voices = window.speechSynthesis ? speechSynthesis.getVoices() : [];
-    const fr = voices.filter((v) => v.lang && v.lang.toLowerCase().startsWith("fr"));
-    frVoice = fr.find((v) => /google|amélie|thomas|audrey|denise|henri/i.test(v.name)) || fr[0] || null;
+    if (isIOS || !window.speechSynthesis) return;
+    const fr = speechSynthesis.getVoices().filter((v) => v.lang && v.lang.toLowerCase().startsWith("fr") && v.localService);
+    frVoice = fr.find((v) => v.default) || fr[0] || null;
   }
   if (window.speechSynthesis) {
     pickVoice();
     speechSynthesis.addEventListener?.("voiceschanged", pickVoice);
   }
 
-  // Safari (iPhone) ne parle qu'après une première phrase lancée par un appui de l'utilisateur :
-  // au premier appui sur la page, on « débloque » la voix avec une phrase silencieuse.
-  let unlocked = false;
-  function unlock() {
-    if (unlocked || !window.speechSynthesis) return;
-    unlocked = true;
-    const u = new SpeechSynthesisUtterance(" ");
-    u.volume = 0;
-    speechSynthesis.speak(u);
-  }
-  document.addEventListener("touchend", unlock, { passive: true });
-  document.addEventListener("click", unlock);
-
   let current = null; // garde une référence : sinon Safari peut oublier la phrase en cours
+  let lastStarted = true; // la dernière phrase a-t-elle vraiment commencé ?
 
   // Lit le texte et attend la fin (ou un délai de secours si la voix ne répond pas).
+  // Sur iPhone, la toute première phrase doit partir directement d'un appui de l'utilisateur.
   function speak(text) {
     if (!text) return Promise.resolve();
     if (muted || !window.speechSynthesis) return new Promise((r) => setTimeout(r, 1200));
     // Annuler juste avant de parler empêche Safari de lire la phrase suivante : seulement si besoin.
     if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
-    speechSynthesis.resume();
     return new Promise((resolve) => {
       const u = new SpeechSynthesisUtterance(text);
       u.lang = "fr-FR";
       if (frVoice) u.voice = frVoice;
       u.rate = 0.95;
       current = u;
+      lastStarted = false;
+      u.onstart = () => (lastStarted = true);
       const done = () => {
         clearTimeout(safety);
         if (current === u) current = null;
@@ -119,5 +112,5 @@ const Narrator = (() => {
     }
   }
 
-  return { speak, stop, toggleMute, isMuted: () => muted, apiKey, setApiKey, tell };
+  return { speak, stop, toggleMute, isMuted: () => muted, started: () => lastStarted, isIOS, apiKey, setApiKey, tell };
 })();
