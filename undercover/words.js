@@ -1,0 +1,57 @@
+// Paires de mots proches. Ajoutez-en autant que vous voulez : ["mot 1", "mot 2"],
+const WORD_PAIRS = [
+  // Nourriture & boissons
+  ["Pizza", "Quiche"], ["Croissant", "Pain au chocolat"], ["Café", "Thé"], ["Bière", "Cidre"],
+  ["Vin", "Champagne"], ["Fromage", "Beurre"], ["Crêpe", "Gaufre"], ["Burger", "Sandwich"],
+  ["Sushi", "Maki"], ["Frites", "Chips"], ["Pomme", "Poire"], ["Citron", "Orange"],
+  ["Fraise", "Framboise"], ["Banane", "Mangue"], ["Glace", "Sorbet"], ["Chocolat", "Caramel"],
+  ["Ketchup", "Mayonnaise"], ["Pâtes", "Riz"], ["Soupe", "Gaspacho"], ["Tacos", "Kebab"],
+  ["Raclette", "Fondue"], ["Couscous", "Tajine"], ["Miel", "Confiture"], ["Lait", "Yaourt"],
+  ["Coca", "Pepsi"], ["Jus d'orange", "Smoothie"], ["Muffin", "Cupcake"], ["Macaron", "Meringue"],
+  ["Popcorn", "Barbe à papa"], ["Œuf", "Omelette"], ["Saumon", "Thon"], ["Tomate", "Poivron"],
+  ["Carotte", "Navet"], ["Salade", "Épinard"], ["Baguette", "Brioche"], ["Nutella", "Pâte à tartiner"],
+  // Maison & objets
+  ["Chaise", "Tabouret"], ["Canapé", "Fauteuil"], ["Lit", "Hamac"], ["Fourchette", "Cuillère"],
+  ["Couteau", "Ciseaux"], ["Douche", "Baignoire"], ["Lampe", "Bougie"], ["Oreiller", "Coussin"],
+  ["Miroir", "Fenêtre"], ["Clé", "Cadenas"], ["Parapluie", "Imperméable"], ["Montre", "Réveil"],
+  ["Stylo", "Crayon"], ["Cahier", "Livre"], ["Sac à dos", "Valise"], ["Brosse à dents", "Peigne"],
+  ["Savon", "Shampoing"], ["Frigo", "Congélateur"], ["Four", "Micro-ondes"], ["Aspirateur", "Balai"],
+  ["Télécommande", "Manette"], ["Casque", "Écouteurs"], ["Téléphone", "Tablette"], ["Ordinateur", "Console"],
+  ["Télé", "Projecteur"], ["Enceinte", "Radio"], ["Chargeur", "Batterie externe"], ["Appareil photo", "Caméra"],
+  // Vêtements
+  ["Pull", "Sweat"], ["Jean", "Jogging"], ["Basket", "Chaussure"], ["Casquette", "Bonnet"],
+  ["Écharpe", "Cravate"], ["Robe", "Jupe"], ["Chemise", "T-shirt"], ["Lunettes", "Lentilles"],
+  ["Pyjama", "Peignoir"], ["Chaussette", "Collant"], ["Manteau", "Doudoune"], ["Bague", "Bracelet"],
+  // Animaux
+  ["Chat", "Chien"], ["Lion", "Tigre"], ["Loup", "Renard"], ["Cheval", "Âne"],
+  ["Dauphin", "Requin"], ["Aigle", "Faucon"], ["Poule", "Canard"], ["Lapin", "Hamster"],
+  ["Abeille", "Guêpe"], ["Papillon", "Libellule"], ["Serpent", "Lézard"], ["Grenouille", "Crapaud"],
+  ["Singe", "Gorille"], ["Ours", "Panda"], ["Vache", "Mouton"], ["Pingouin", "Manchot"],
+  ["Souris", "Rat"], ["Crocodile", "Alligator"], ["Escargot", "Limace"], ["Baleine", "Orque"],
+  // Lieux & voyages
+  ["Plage", "Piscine"], ["Montagne", "Colline"], ["Forêt", "Jungle"], ["Désert", "Savane"],
+  ["Paris", "Londres"], ["New York", "Los Angeles"], ["Italie", "Espagne"], ["Hôtel", "Camping"],
+  ["Avion", "Hélicoptère"], ["Train", "Métro"], ["Voiture", "Moto"], ["Vélo", "Trottinette"],
+  ["Bateau", "Sous-marin"], ["Bus", "Tramway"], ["Aéroport", "Gare"], ["Cinéma", "Théâtre"],
+  ["Restaurant", "Fast-food"], ["Boulangerie", "Pâtisserie"], ["Hôpital", "Pharmacie"], ["École", "Université"],
+  ["Musée", "Galerie"], ["Bibliothèque", "Librairie"], ["Boîte de nuit", "Bar"], ["Parc", "Jardin"],
+  ["Château", "Palais"], ["Prison", "Commissariat"], ["Stade", "Gymnase"], ["Supermarché", "Marché"],
+  // Sports & loisirs
+  ["Football", "Rugby"], ["Basket", "Handball"], ["Tennis", "Ping-pong"], ["Ski", "Snowboard"],
+  ["Natation", "Plongée"], ["Boxe", "Judo"], ["Golf", "Mini-golf"], ["Surf", "Skate"],
+  ["Yoga", "Pilates"], ["Course à pied", "Marche"], ["Échecs", "Dames"], ["Poker", "Belote"],
+  ["Bowling", "Billard"], ["Karaoké", "Concert"], ["Guitare", "Violon"], ["Piano", "Batterie"],
+  ["Fléchettes", "Tir à l'arc"], ["Escalade", "Randonnée"], ["Puzzle", "Lego"], ["Monopoly", "Uno"],
+  // Métiers & personnes
+  ["Médecin", "Infirmier"], ["Pompier", "Policier"], ["Professeur", "Directeur"], ["Cuisinier", "Boulanger"],
+  ["Pilote", "Hôtesse de l'air"], ["Avocat", "Juge"], ["Coiffeur", "Barbier"], ["Plombier", "Électricien"],
+  ["Chanteur", "Rappeur"], ["Acteur", "Réalisateur"], ["Youtubeur", "Streamer"], ["Footballeur", "Arbitre"],
+  ["Roi", "Président"], ["Pirate", "Viking"], ["Sorcier", "Magicien"], ["Vampire", "Zombie"],
+  ["Fantôme", "Squelette"], ["Ninja", "Samouraï"], ["Chevalier", "Mousquetaire"], ["Astronaute", "Alien"],
+  // Culture pop & divers
+  ["Netflix", "YouTube"], ["Instagram", "TikTok"], ["WhatsApp", "Snapchat"], ["Mario", "Sonic"],
+  ["Harry Potter", "Le Seigneur des anneaux"], ["Batman", "Spider-Man"], ["Noël", "Nouvel An"], ["Halloween", "Carnaval"],
+  ["Anniversaire", "Mariage"], ["Vacances", "Week-end"], ["Soleil", "Lune"], ["Pluie", "Neige"],
+  ["Orage", "Tempête"], ["Été", "Printemps"], ["Feu", "Lave"], ["Rêve", "Cauchemar"],
+  ["Bisou", "Câlin"], ["Selfie", "Photo de groupe"], ["Tatouage", "Piercing"], ["Gâteau", "Tarte"],
+];

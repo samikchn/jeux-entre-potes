@@ -1,0 +1,115 @@
+:root {
+  --bg: #14121f;
+  --card: #1f1c30;
+  --text: #f3f1ff;
+  --muted: #a39fbf;
+  --accent: #8b5cf6;
+  --accent2: #22c55e;
+  --danger: #ef4444;
+  --border: #34304d;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+main {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+h1 { font-size: 1.8rem; margin: 8px 0 16px; text-align: center; }
+h2 { font-size: 1.3rem; margin: 0 0 12px; }
+a { color: var(--accent); }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 14px;
+}
+
+.muted { color: var(--muted); font-size: .9rem; }
+.center { text-align: center; }
+.hidden { display: none !important; }
+
+button, .btn {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  margin: 8px 0;
+  border: none;
+  border-radius: 12px;
+  background: var(--accent);
+  color: white;
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+button:disabled { opacity: .4; cursor: default; }
+button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+button.danger { background: var(--danger); }
+button.small { display: inline-block; width: auto; padding: 6px 12px; margin: 0; font-size: .85rem; }
+
+input {
+  width: 100%;
+  padding: 12px;
+  margin: 6px 0;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.row { display: flex; gap: 8px; align-items: center; }
+.row > * { flex: 1; }
+
+.list { list-style: none; padding: 0; margin: 0; }
+.list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.list li:last-child { border-bottom: none; }
+.list li.dead { opacity: .4; text-decoration: line-through; }
+
+.counter { display: flex; align-items: center; justify-content: space-between; margin: 8px 0; }
+.counter div { display: flex; align-items: center; gap: 12px; }
+.counter button { width: 40px; margin: 0; padding: 8px; }
+
+.word {
+  font-size: 2rem;
+  font-weight: 800;
+  text-align: center;
+  padding: 24px 0;
+  color: var(--accent2);
+}
+
+.code {
+  font-size: 2.4rem;
+  letter-spacing: .3em;
+  font-weight: 800;
+  text-align: center;
+}
+
+.tag {
+  font-size: .75rem;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--border);
+}
+
+.vote-btn.selected { background: var(--accent2); }
