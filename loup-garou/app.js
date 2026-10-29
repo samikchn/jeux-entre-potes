@@ -16,6 +16,8 @@ const S = {
   lobby: [],
   comp: {},
   reveal: 0,
+  narration: localStorage.getItem("lg-narration") || "voix", // mode local : "voix" ou "humain"
+  narratorOpen: false,
   showRole: false,
   sel: [], // sélection multiple (Cupidon, Joueur de flûte)
   witch: { heal: null, kill: null },
@@ -53,7 +55,8 @@ const NIGHT_SCRIPT = [
 
 function render() {
   const g = S.game;
-  document.body.classList.toggle("night", g?.phase === "night" && S.mode !== "local");
+  const localNight = S.narration === "voix" && S.reveal >= (g?.players.length || 0);
+  document.body.classList.toggle("night", g?.phase === "night" && (S.mode !== "local" || localNight));
   const key = [S.mode, g?.phase, g?.night, g?.step, S.reveal, !!g].join("|");
   Common.render(document.getElementById("app"), view(), key);
 }
@@ -65,7 +68,10 @@ function view() {
     return card(`<p class="center">Connexion au salon <b>${esc(S.code)}</b>…</p>${S.status ? `<p class="muted center">${esc(S.status)}</p>` : ""}`) + leaveButton();
   }
   if (!S.game) return warn + lobbyView();
-  if (S.mode === "local") return S.reveal < S.game.players.length ? revealView() : narratorView();
+  if (S.mode === "local") {
+    if (S.reveal < S.game.players.length) return revealView();
+    return S.narration === "voix" ? Auto.view() : narratorView();
+  }
   if (!me()) return warn + card(`<p class="center">Une partie est en cours dans le salon <b>${esc(S.code)}</b>.<br>Tu joueras à la prochaine !</p>`) + leaveButton();
   const views = { night: nightView, day: dayView, hunter: hunterView, end: endView };
   return warn + views[S.game.phase]();
@@ -73,7 +79,9 @@ function view() {
 
 const card = (html, cls = "") => `<div class="card ${cls}">${html}</div>`;
 const isAdmin = () => S.mode !== "player";
-const me = () => S.game && LG.P(S.game, S.me);
+// Joueur dont on affiche les infos : soi-même en ligne, celui qui a le téléphone en local.
+const me = () => S.game && LG.P(S.game, S.mode === "local" ? Auto.viewer() : S.me);
+const actorId = () => (S.mode === "local" ? Auto.actor() : S.me);
 const leaveButton = () => `<button class="ghost" onclick="A.leave()">Quitter</button>`;
 const phase = (label) => `<div class="phase-wrap"><span class="phase">${label}</span></div>`;
 const teamTag = (role) => `<span class="tag ${ROLES[role].team}">${ROLES[role].emoji} ${esc(ROLES[role].name)}</span>`;
@@ -109,7 +117,7 @@ function homeView() {
     `)}
     <a class="card mode" onclick="A.startLocal()">
       <span class="emoji">📱</span>
-      <div><h2>Un seul téléphone</h2><p class="muted">Pour jouer avec un narrateur : l'app distribue les rôles et lui donne le script de la nuit.</p></div>
+      <div><h2>Un seul téléphone</h2><p class="muted">On se passe le téléphone : une voix fait le narrateur (avec IA en option), ou un joueur anime avec le script.</p></div>
     </a>
     ${card(`
       <details id="rules">
@@ -160,7 +168,7 @@ function lobbyView() {
     return `
       ${card(`
         <h2>Joueurs (${n})</h2>
-        <p class="muted">Sans compter le narrateur. Ajoutez-les dans l'ordre où vous êtes assis.</p>
+        <p class="muted">${S.narration === "voix" ? "Tout le monde joue." : "Sans compter le narrateur."} Ajoutez-les dans l'ordre où vous êtes assis.</p>
         <ul class="players">${S.lobby.map((p, i) => `
           <li>${avatar(p.name)}<span class="name">${esc(p.name)}</span>
           <button class="icon ghost" onclick="A.removeLocal(${i})" aria-label="Retirer">✕</button></li>`).join("")}
@@ -170,6 +178,7 @@ function lobbyView() {
           <button onclick="A.addLocal()">Ajouter</button>
         </div>
       `)}
+      ${narrationView()}
       ${compositionView()}
       ${startBtn}
       ${leaveButton()}`;
@@ -279,8 +288,44 @@ function revealView() {
     ${leaveButton()}`;
 }
 
+// Choix du narrateur pour le mode un seul téléphone.
+function narrationView() {
+  const opt = (mode, emoji, title, desc) => `
+    <button class="tile ${S.narration === mode ? "selected" : ""}" style="align-items:flex-start;text-align:left" onclick="A.setNarration('${mode}')">
+      <b>${emoji} ${title}</b><span class="muted" style="font-weight:400;font-size:.85rem">${desc}</span>
+    </button>`;
+  const key = Narrator.apiKey();
+  return card(`
+    <h2>Narrateur</h2>
+    <div class="grid">
+      ${opt("voix", "🔊", "L'app", "Une voix appelle chaque rôle la nuit. Tout le monde joue.")}
+      ${opt("humain", "🧑", "Un joueur", "Il ne joue pas : l'app lui donne les rôles et le script.")}
+    </div>
+    ${S.narration === "voix" ? `
+      <details id="ai">
+        <summary><b>🤖 Narration par IA (optionnel)</b></summary>
+        <p class="muted">Avec une clé API Claude (console.anthropic.com), l'IA raconte les annonces comme un vrai conteur. Sans clé, la voix lit un texte simple. La clé reste uniquement sur ce téléphone ; chaque annonce coûte une fraction de centime.</p>
+        ${key
+          ? `<p>✅ Clé enregistrée (…${esc(key.slice(-4))})</p><button class="secondary" onclick="A.forgetAiKey()">Supprimer la clé</button>`
+          : `<div class="row"><input id="aikey" type="password" placeholder="sk-ant-…" autocomplete="off"><button onclick="A.saveAiKey()">OK</button></div>`}
+      </details>
+      <button class="secondary" onclick="A.testVoice()">🔊 Tester la voix</button>
+      <p class="muted">Montez le son du téléphone et posez-le au centre de la table.</p>` : ""}
+  `);
+}
+
 function narratorView() {
   const g = S.game;
+  if (!S.narratorOpen) {
+    return `
+      ${phase("✅ Distribution terminée")}
+      ${card(`
+        <div class="center"><div style="font-size:3rem">🤫</div>
+        <p>Les rôles sont cachés. Rendez le téléphone au narrateur.</p></div>
+        <button onclick="A.openNarrator()">📜 Ouvrir l'espace narrateur</button>
+      `)}
+      ${leaveButton()}`;
+  }
   const present = new Set(g.players.map((p) => p.role));
   const holders = (role) => g.players.filter((p) => p.role === role).map((p) => esc(p.name)).join(", ");
   return `
@@ -297,6 +342,7 @@ function narratorView() {
       </ol>
       <p class="muted">« Le village se réveille… » : annoncez les morts et révélez leur rôle, puis débat et vote.</p>
     `)}
+    <button class="secondary" onclick="A.closeNarrator()">🙈 Cacher les rôles</button>
     <button onclick="A.replay()">🔄 Nouvelle distribution</button>
     ${leaveButton()}`;
 }
@@ -326,7 +372,7 @@ function hostNightControls() {
 
 function taskView(t) {
   const g = S.game;
-  const others = LG.alive(g).filter((p) => p.id !== S.me);
+  const others = LG.alive(g).filter((p) => p.id !== actorId());
   const skip = (label) => `<button class="secondary" onclick="A.night('${t.kind}', {})">${label}</button>`;
   switch (t.kind) {
     case "wolves": {
@@ -380,7 +426,7 @@ function taskView(t) {
         <button onclick="A.night('infect', {yes: true})">🦠 Infecter</button>${skip("Non, la dévorer")}`, "task");
     case "loupblanc":
       return card(`<h2>🤍 Loup blanc, veux-tu tuer un loup ?</h2>
-        ${tiles(LG.alive(g).filter((p) => p.wolf && p.id !== S.me), "A.pickNight.bind(null,'loupblanc')")}${skip("Ne tuer personne")}`, "task");
+        ${tiles(LG.alive(g).filter((p) => p.wolf && p.id !== actorId()), "A.pickNight.bind(null,'loupblanc')")}${skip("Ne tuer personne")}`, "task");
     case "sorciere": {
       const victims = LG.wolfVictims(g).map((id) => LG.P(g, id));
       const w = S.witch;
@@ -492,8 +538,10 @@ const A = {
   },
 
   replay() {
+    Auto.stop();
     S.game = null;
     S.reveal = 0;
+    S.narratorOpen = false;
     if (S.mode === "host") S.lobby = room.presence();
     act();
   },
@@ -501,6 +549,43 @@ const A = {
   nextReveal() {
     S.reveal++;
     render();
+    if (S.reveal >= S.game.players.length && S.narration === "voix") Auto.start();
+  },
+
+  setNarration(mode) {
+    S.narration = mode;
+    localStorage.setItem("lg-narration", mode);
+    render();
+  },
+
+  openNarrator() {
+    if (confirm("Es-tu le narrateur ? Les rôles de tous les joueurs vont s'afficher.")) {
+      S.narratorOpen = true;
+      render();
+    }
+  },
+
+  closeNarrator() {
+    S.narratorOpen = false;
+    render();
+  },
+
+  saveAiKey() {
+    Narrator.setApiKey(document.getElementById("aikey").value);
+    document.getElementById("aikey").value = "";
+    toast(Narrator.apiKey() ? "Clé enregistrée sur ce téléphone." : "Clé supprimée.");
+    render();
+  },
+
+  forgetAiKey() {
+    Narrator.setApiKey("");
+    render();
+  },
+
+  async testVoice() {
+    const story = Narrator.apiKey() ? await Narrator.tell("Présente-toi en une phrase comme narrateur de la partie.") : null;
+    if (Narrator.apiKey() && !story) toast("IA indisponible : " + (Narrator.tell.lastError || "erreur inconnue"));
+    Narrator.speak(story || "Bonsoir. Je serai votre narrateur cette nuit.");
   },
 
   // Retourne la carte sans tout redessiner, pour garder l'animation.
@@ -530,7 +615,8 @@ const A = {
   night(kind, data) {
     S.sel = [];
     S.witch = { heal: null, kill: null };
-    if (S.mode === "host") act((g) => LG.act(g, S.me, kind, data));
+    if (S.mode === "local") Auto.act(kind, data);
+    else if (S.mode === "host") act((g) => LG.act(g, S.me, kind, data));
     else room.send("act", { pid: S.me, kind, data });
   },
 
@@ -594,6 +680,8 @@ const A = {
   leave() {
     if (S.game && S.mode !== "player" && !confirm("Quitter la partie ?")) return;
     if (S.mode === "host") localStorage.removeItem("lg-host");
+    Auto.stop();
+    S.narratorOpen = false;
     room?.leave();
     room = null;
     Object.assign(S, { mode: null, code: "", hostId: null, hostGone: false, game: null, lobby: [], comp: {}, error: "", status: "", reveal: 0 });

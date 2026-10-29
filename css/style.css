@@ -272,6 +272,7 @@ h3 { font-size: .95rem; margin: 14px 0 8px; color: var(--muted); }
 .face.back.team-solo { border-color: #f97316; }
 .card.task { border-color: rgba(139, 92, 246, .6); box-shadow: 0 0 30px rgba(139, 92, 246, .2); }
 .secret { margin: 6px 0; }
+.story { font-style: italic; color: #ddd6fe; line-height: 1.5; margin: 0; }
 .script li { margin-bottom: 10px; }
 button.danger { background: linear-gradient(135deg, #dc2626, #f97316); }
 
