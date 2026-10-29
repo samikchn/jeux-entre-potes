@@ -23,9 +23,10 @@ const UC = (() => {
     return { undercover: 3, white: 1 };
   }
 
-  // Il faut toujours plus de civils que d'infiltrés.
+  // Au moins 1 infiltré, au moins 2 civils, et jamais moins de civils que d'infiltrés.
   function countsValid(n, undercover, white) {
-    return n >= 3 && undercover + white >= 1 && n - undercover - white > undercover + white;
+    const civils = n - undercover - white;
+    return n >= 3 && undercover >= 0 && white >= 0 && undercover + white >= 1 && civils >= 2 && civils >= undercover + white;
   }
 
   function newGame(players, settings) {
