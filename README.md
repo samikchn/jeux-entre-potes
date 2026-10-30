@@ -1,6 +1,6 @@
 # 🎲 Jeux entre potes
 
-Application web de jeux à jouer en groupe. Jeux disponibles : **Undercover** et **Loup-Garou**.
+Application web de jeux à jouer en groupe. Jeux disponibles : **Undercover**, **Loup-Garou** et **Empire IDF**.
 
 Aucune installation, aucun build : que du HTML, CSS et JavaScript.
 
@@ -42,6 +42,10 @@ La description de chaque rôle est dans le jeu (« Les règles et les rôles »)
 **Mode obscur** (tous les modes) : les rôles des joueurs morts ne sont pas révélés. Les morts peuvent voir tous les rôles (onglet « Rôles (réservé aux morts) » sur un seul téléphone, automatiquement en ligne).
 - **Narrateur : un joueur** — il ne joue pas ; après la distribution, il ouvre l'espace narrateur (avec confirmation) pour voir les rôles et le script de la nuit.
 
+### Empire IDF
+
+Jeu de plateau original (dans le genre des jeux de propriétés) sur les villes d'Île-de-France, en ligne dans un salon privé, avec des robots pour compléter la table. 32 cases : 21 villes en 7 départements, 4 lignes de RER, événements, taxe, cagnotte et Bouchons sur le périph'. Enchères quand on refuse d'acheter, échanges entre joueurs, constructions (Résidence, Immeuble, Tour) sur un département complet, faillite. Les loyers augmentent de 20 % tous les 10 tours. Fin au nombre de tours choisi ou à la faillite (80 tours maximum).
+
 ## Configurer le mode en ligne (Supabase)
 
 Le mode en ligne utilise uniquement le temps réel de Supabase (pas de base de données, pas de table à créer).
@@ -67,6 +71,10 @@ undercover/
   index.html          Page du jeu
   words.js            Paires de mots (ajoutez-en !)
   engine.js           Règles du jeu, sans interface
+  app.js              Interface + réseau
+empire/
+  board.js            Plateau, départements et cartes événements
+  engine.js           Règles et robots, sans interface (tourne chez l'hôte)
   app.js              Interface + réseau
 loup-garou/
   index.html          Page du jeu
