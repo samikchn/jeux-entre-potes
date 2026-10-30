@@ -82,6 +82,97 @@ const Common = (() => {
 
   const onlineConfigured = () => !!(window.SUPABASE_URL && window.SUPABASE_ANON_KEY);
 
+  // ---------- Annuaire des salons ouverts (tous les jeux) ----------
+  // Chaque hôte s'annonce sur le canal « salons » (présence Supabase) tant que sa page est
+  // ouverte ; l'accueil et les jeux lisent la liste. Fermer un salon = demander à son hôte
+  // (seul celui qui l'a créé peut le faire).
+  const GAMES = {
+    undercover: { name: "Undercover", path: "undercover/" },
+    "loup-garou": { name: "Loup-Garou", path: "loup-garou/" },
+    empire: { name: "Empire IDF", path: "empire/" },
+  };
+  let dir = null;
+  let dirReady = false;
+  let dirInfo = null;
+  const dirListeners = [];
+  const closeListeners = [];
+  const VIEWER = { viewer: true }; // présence d'une page qui regarde la liste sans salon
+
+  function directory() {
+    if (dir || !onlineConfigured() || !window.supabase) return dir;
+    client = client || supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+    dir = client.channel("salons", { config: { presence: { key: playerId() + "-" + Math.random().toString(36).slice(2, 6) } } });
+    dir
+      .on("presence", { event: "sync" }, () => dirListeners.forEach((f) => f(listRooms())))
+      .on("broadcast", { event: "close" }, ({ payload }) => closeListeners.forEach((f) => f(payload)))
+      .subscribe((status) => {
+        if (status !== "SUBSCRIBED") return;
+        dirReady = true;
+        // Supabase n'envoie la liste qu'aux pages présentes : sans salon, on se déclare spectateur.
+        dir.track(dirInfo || VIEWER);
+        dirListeners.forEach((f) => f(listRooms()));
+      });
+    return dir;
+  }
+
+  function listRooms() {
+    if (!dir) return [];
+    return Object.values(dir.presenceState()).flat().filter((r) => r.code)
+      .sort((a, b) => b.at - a.at);
+  }
+
+  // L'hôte annonce (ou met à jour) son salon ; null pour le retirer.
+  // info : { game, code, host, hostId, players, status }
+  function announceRoom(info) {
+    if (!directory()) return;
+    const next = info ? { ...info, at: dirInfo?.code === info.code ? dirInfo.at : Date.now() } : null;
+    if (JSON.stringify(next) === JSON.stringify(dirInfo)) return;
+    dirInfo = next;
+    if (dirReady) dir.track(next || VIEWER);
+  }
+
+  function watchRooms(cb) {
+    directory();
+    dirListeners.push(cb);
+    cb(listRooms());
+  }
+
+  // Demande à l'hôte de fermer son salon (il vérifie que c'est bien son créateur).
+  function closeRoom(game, code) {
+    directory()?.send({ type: "broadcast", event: "close", payload: { game, code, by: playerId() } });
+  }
+
+  // Liste HTML des salons. root : chemin vers la racine du site ("" sur l'accueil, "../" dans un jeu).
+  // game : n'afficher que les salons de ce jeu (facultatif).
+  function roomsView(rooms, { root = "", game = null } = {}) {
+    const list = rooms.filter((r) => GAMES[r.game] && (!game || r.game === game));
+    if (!list.length) return `<p class="muted" style="margin:0">Aucun salon ouvert pour l'instant.</p>`;
+    const me = playerId();
+    return list.map((r) => `
+      <div class="room-row">
+        <div class="room-tx"><b>${esc(GAMES[r.game].name)} · ${esc(r.code)}</b>
+          <small class="muted">${esc(r.host)}${r.hostId === me ? " (toi)" : ""} · ${r.players} joueur${r.players > 1 ? "s" : ""} · ${r.status === "playing" ? "partie en cours" : "en attente"}</small></div>
+        <a class="room-btn" href="${root}${GAMES[r.game].path}?salon=${encodeURIComponent(r.code)}">Rejoindre</a>
+        ${r.hostId === me ? `<button class="room-btn danger" onclick="Common.askClose('${r.game}', '${esc(r.code)}')">Supprimer</button>` : ""}
+      </div>`).join("");
+  }
+
+  function askClose(game, code) {
+    if (confirm(`Supprimer le salon ${code} ? Les joueurs connectés seront déconnectés.`)) {
+      closeRoom(game, code);
+      toast("Salon supprimé.");
+    }
+  }
+
+  // Côté hôte : ferme le salon si le créateur le demande depuis un autre écran.
+  function onCloseRequest(game, getRoom, close) {
+    directory();
+    closeListeners.push((p) => {
+      const r = getRoom();
+      if (r && p.game === game && p.code === r.code && p.by === r.hostId) close();
+    });
+  }
+
   // Retour au clic : effet visuel, petit « tic » sonore et vibration (Android ; l'iPhone ne
   // laisse pas les sites vibrer).
   // Sur iPhone, le son d'un site est coupé par le mode silencieux, sauf s'il se déclare
@@ -141,5 +232,8 @@ const Common = (() => {
     { passive: true }
   );
 
-  return { playerId, esc, toast, avatar, render, randomCode, joinRoom, onlineConfigured, playbackAudio, micAudio, audioSessionType };
+  return {
+    playerId, esc, toast, avatar, render, randomCode, joinRoom, onlineConfigured, playbackAudio, micAudio, audioSessionType,
+    GAMES, announceRoom, watchRooms, closeRoom, askClose, onCloseRequest, roomsView,
+  };
 })();

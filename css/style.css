@@ -307,3 +307,15 @@ button.danger { background: linear-gradient(135deg, #dc2626, #f97316); }
 }
 .live-log .err { color: #fca5a5; }
 
+
+/* Liste des salons ouverts (accueil et jeux) */
+.room-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.room-row:last-child { border-bottom: 0; }
+.room-tx { flex: 1; min-width: 0; }
+.room-tx b { display: block; font-size: .9rem; }
+.room-tx small { font-size: .75rem; }
+.room-btn {
+  display: inline-block; width: auto; margin: 0; padding: 8px 12px; border-radius: 10px; font-size: .8rem; font-weight: 700;
+  background: var(--card); border: 1px solid var(--border); color: var(--text); text-decoration: none; box-shadow: none;
+}
+.room-btn.danger { background: rgba(239, 68, 68, .18); border-color: rgba(239, 68, 68, .5); color: #fca5a5; }

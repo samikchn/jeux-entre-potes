@@ -16,6 +16,7 @@ const S = {
   reveal: 0,
   showWord: false,
   status: "",
+  rooms: [], // salons ouverts (annuaire)
   error: "",
 };
 
@@ -128,6 +129,7 @@ function homeView() {
         <p class="muted">À tour de rôle, chacun donne un indice sur son mot, puis on vote pour éliminer quelqu'un. Les Civils gagnent quand tous les infiltrés sont éliminés ; les infiltrés gagnent s'il ne reste qu'un Civil.</p>
       </details>
     `)}
+    ${card(`<h2>Salons ouverts</h2>${Common.roomsView(S.rooms, { root: "../", game: "undercover" })}`)}
     <p class="center"><a href="../" class="muted">← Tous les jeux</a></p>
   `;
 }
@@ -510,9 +512,14 @@ const A = {
     else navigator.clipboard.writeText(link).then(() => toast("Lien copié !"));
   },
 
-  leave() {
-    if (S.game && S.mode !== "player" && !confirm("Quitter la partie ?")) return;
-    if (S.mode === "host") localStorage.removeItem("uc-host");
+  // force : salon fermé à distance par son créateur (pas de confirmation).
+  leave(force) {
+    if (!force && S.game && S.mode !== "player" && !confirm("Quitter la partie ?")) return;
+    if (S.mode === "host") {
+      localStorage.removeItem("uc-host");
+      send("state", { closed: true });
+      Common.announceRoom(null);
+    }
     if (channel) sb.removeChannel(channel);
     channel = null;
     Object.assign(S, { mode: null, code: "", hostId: null, hostGone: false, game: null, lobby: [], error: "", status: "" });
@@ -575,6 +582,10 @@ function connect() {
   channel
     .on("broadcast", { event: "state" }, ({ payload }) => {
       if (S.mode !== "player") return;
+      if (payload.closed) {
+        toast("L'hôte a fermé le salon.");
+        return A.leave(true);
+      }
       if (!payload.game) S.showWord = false;
       S.hostId = payload.hostId;
       S.hostGone = false;
@@ -623,10 +634,21 @@ function presenceList() {
 
 function broadcastState() {
   send("state", { hostId: S.me, game: S.game, lobby: S.lobby, settings: S.settings });
+  Common.announceRoom({ game: "undercover", code: S.code, host: S.name, hostId: S.me, players: S.game ? S.game.players.length : S.lobby.length, status: S.game ? "playing" : "lobby" });
 }
 
 function send(event, payload) {
   if (channel) channel.send({ type: "broadcast", event, payload });
 }
+
+// Annuaire des salons : liste sur l'accueil, et fermeture à distance par le créateur.
+Common.watchRooms((rooms) => {
+  S.rooms = rooms;
+  if (!S.mode) render();
+});
+Common.onCloseRequest("undercover", () => (S.mode === "host" ? { code: S.code, hostId: S.me } : null), () => {
+  toast("Salon supprimé.");
+  A.leave(true);
+});
 
 render();

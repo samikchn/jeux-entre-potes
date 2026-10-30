@@ -15,40 +15,50 @@ const GROUPS = [
 const P = (name, short, icon, group, price) => ({ type: "prop", name, short, icon, group, price });
 const GARE = (name, short) => ({ type: "rer", name, short, icon: "train-front", price: 200 });
 
+// 36 cases : 4 coins + 8 cases par côté. Chaque département tient entier sur un seul côté.
+const CHANCE = { type: "event", name: "Chance", short: "Chance" };
 const SPACES = [
   { type: "start", name: "Départ", short: "Départ" },
+  // côté bas
   P("Sarcelles", "Sarcelles", "store", 0, 60),
-  { type: "event", name: "Événement", short: "Événement" },
-  P("Argenteuil", "Argen­teuil", "palette", 0, 60),
+  P("Argenteuil", "Argenteuil", "palette", 0, 60),
   P("Herblay-sur-Seine", "Herblay", "sailboat", 0, 80),
-  GARE("Gare du Nord", "G. du Nord"),
+  CHANCE,
+  GARE("Gare du Nord", "Gare du Nord"),
   P("Bondy", "Bondy", "mic", 1, 100),
   P("Saint-Denis", "St-Denis", "trophy", 1, 100),
-  { type: "jail", name: "Prison de Fleury-Mérogis", short: "Prison" },
   P("Montreuil", "Montreuil", "apple", 1, 120),
+  { type: "jail", name: "Prison de Fleury-Mérogis", short: "Prison" },
+  // côté gauche
   P("Meaux", "Meaux", "wheat", 2, 140),
-  { type: "tax", name: "Taxe foncière", short: "Taxe", amount: 150 },
   P("Melun", "Melun", "shield", 2, 140),
-  GARE("Gare Montparnasse", "Montpar­nasse"),
   P("Chessy", "Chessy", "ferris-wheel", 2, 160),
+  GARE("Gare Montparnasse", "Montparnasse"),
+  CHANCE,
   P("Évry-Courcouronnes", "Évry", "church", 3, 180),
-  { type: "pause", name: "Pause terrasse", short: "Pause" },
   P("Massy", "Massy", "train-track", 3, 180),
-  { type: "event", name: "Événement", short: "Événement" },
   P("Orsay", "Orsay", "atom", 3, 200),
+  { type: "pause", name: "Pause terrasse", short: "Pause" },
+  // côté haut
   P("L'Haÿ-les-Roses", "L'Haÿ", "flower", 4, 220),
-  GARE("Châtelet-Les Halles", "Châtelet"),
   P("Cachan", "Cachan", "graduation-cap", 4, 220),
   P("Vincennes", "Vincennes", "castle", 4, 240),
-  { type: "control", name: "Garde à vue", short: "Garde à vue" },
+  CHANCE,
+  GARE("Châtelet-Les Halles", "Châtelet"),
   P("Poissy", "Poissy", "car", 5, 260),
   P("Saint-Germain-en-Laye", "St-Germain", "trees", 5, 260),
-  P("Versailles", "Ver­sailles", "crown", 5, 280),
+  P("Versailles", "Versailles", "crown", 5, 280),
+  { type: "control", name: "Garde à vue", short: "Garde à vue" },
+  // côté droit
+  CHANCE,
   GARE("Gare Saint-Lazare", "St-Lazare"),
+  { type: "tax", name: "Taxe foncière", short: "Taxe", amount: 150 },
+  CHANCE,
   P("Clamart", "Clamart", "tree-pine", 6, 300),
   P("Issy-les-Moulineaux", "Issy", "laptop", 6, 300),
   P("Neuilly-sur-Seine", "Neuilly", "gem", 6, 350),
-];
+  { type: "tax", name: "Impôt sur la fortune", short: "ISF", amount: 100 },
+].map((s) => ({ ...s })); // copies : chaque case Chance est un objet à part (index propre)
 
 // Code postal et page Wikipédia (pour la photo affichée quand on s'arrête sur la case).
 const CITY_INFO = {
@@ -79,7 +89,7 @@ const CITY_INFO = {
   "Gare Saint-Lazare": ["75008", "Gare de Paris-Saint-Lazare"],
 };
 
-const JAIL = 8;
+const JAIL = 9;
 const START_BONUS = 200;
 const JAIL_FEE = 50;
 const LEVELS = ["Terrain", "Résidence", "Immeuble", "Tour"];
@@ -102,7 +112,7 @@ const CARDS = [
   { text: "C'est ton anniversaire : chaque joueur t'offre 20 €.", fromEach: 20 },
   { text: "Ravalement de façade : paye 25 € par niveau construit.", perLevel: 25 },
   { text: "Retour à la case Départ (tu touches la prime).", goto: 0 },
-  { text: "Visite à Versailles : avance jusque-là.", goto: 27 },
+  { text: "Visite à Versailles : avance jusque-là.", goto: 26 },
   { text: "Tu files à la gare la plus proche.", nearestRer: true },
   { text: "Garde à vue surprise : direction la prison !", jail: true },
   { text: "Libéré sous caution : garde cette carte pour sortir de prison.", jailCard: true },

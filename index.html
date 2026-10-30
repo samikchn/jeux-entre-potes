@@ -31,15 +31,29 @@
     </a>
 
     <a class="card mode" href="empire/">
-      <span class="emoji">🏙️</span>
+      <img src="empire/logo.svg" alt="" style="width:46px;height:46px;border-radius:12px;flex:0 0 auto">
       <div>
         <h2>Empire IDF</h2>
         <p class="muted">Achète les villes d'Île-de-France, construis des tours et ruine tes potes. En ligne, avec des robots si besoin.</p>
       </div>
     </a>
 
+    <div class="card">
+      <h2>Salons ouverts</h2>
+      <p class="muted" style="margin-top:0">Les parties en ligne lancées en ce moment, tous jeux confondus. Tu peux supprimer celles que tu as créées.</p>
+      <div id="rooms"><p class="muted">Chargement…</p></div>
+    </div>
+
     <p class="muted center">D'autres jeux arrivent bientôt…</p>
   </main>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"></script>
+  <script src="js/config.js"></script>
   <script src="js/common.js"></script>
+  <script>
+    // Salons ouverts de tous les jeux, mis à jour en direct.
+    Common.watchRooms((rooms) => {
+      document.getElementById("rooms").innerHTML = Common.roomsView(rooms);
+    });
+  </script>
 </body>
 </html>

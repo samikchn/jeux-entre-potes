@@ -24,6 +24,7 @@ const S = {
   sel: [], // sélection multiple (Cupidon, Joueur de flûte)
   witch: { heal: null, kill: null },
   status: "",
+  rooms: [], // salons ouverts (annuaire)
   error: "",
 };
 
@@ -137,6 +138,7 @@ function homeView() {
         ${ROLE_ORDER.concat("villageois").map((r) => `<p>${teamTag(r)}<br><span class="muted">${esc(ROLES[r].desc)}</span></p>`).join("")}
       </details>
     `)}
+    ${card(`<h2>Salons ouverts</h2>${Common.roomsView(S.rooms, { root: "../", game: "loup-garou" })}`)}
     <p class="center"><a href="../" class="muted">← Tous les jeux</a></p>`;
 }
 
@@ -801,9 +803,14 @@ const A = {
     else navigator.clipboard.writeText(link).then(() => toast("Lien copié !"));
   },
 
-  leave() {
-    if (S.game && S.mode !== "player" && !confirm("Quitter la partie ?")) return;
-    if (S.mode === "host") localStorage.removeItem("lg-host");
+  // force : salon fermé à distance par son créateur (pas de confirmation).
+  leave(force) {
+    if (!force && S.game && S.mode !== "player" && !confirm("Quitter la partie ?")) return;
+    if (S.mode === "host") {
+      localStorage.removeItem("lg-host");
+      room?.send("state", { closed: true });
+      Common.announceRoom(null);
+    }
     Auto.stop();
     S.narratorOpen = false;
     room?.leave();
@@ -848,9 +855,20 @@ function act(fn) {
   if (S.mode === "host") {
     localStorage.setItem("lg-host", JSON.stringify({ code: S.code, game: S.game, comp: S.comp, lobby: S.lobby }));
     room?.send("state", { hostId: S.me, game: S.game, lobby: S.lobby, comp: S.comp, hideRoles: S.hideRoles });
+    Common.announceRoom({ game: "loup-garou", code: S.code, host: S.name, hostId: S.me, players: S.game ? S.game.players.length : S.lobby.length, status: S.game ? "playing" : "lobby" });
   }
   render();
 }
+
+// Annuaire des salons : liste sur l'accueil, et fermeture à distance par le créateur.
+Common.watchRooms((rooms) => {
+  S.rooms = rooms;
+  if (!S.mode) render();
+});
+Common.onCloseRequest("loup-garou", () => (S.mode === "host" ? { code: S.code, hostId: S.me } : null), () => {
+  toast("Salon supprimé.");
+  A.leave(true);
+});
 
 // ---------- Réseau ----------
 
@@ -858,6 +876,10 @@ function connect() {
   room = Common.joinRoom("loupgarou-" + S.code, S.me, S.name, {
     events: ["state", "act", "hunt"],
     message(event, payload) {
+      if (event === "state" && S.mode === "player" && payload.closed) {
+        toast("L'hôte a fermé le salon.");
+        return A.leave(true);
+      }
       if (event === "state" && S.mode === "player") {
         if (S.game?.phase !== payload.game?.phase || S.game?.step !== payload.game?.step) resetSelections();
         if (!payload.game) S.showRole = false;

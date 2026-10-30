@@ -24,6 +24,7 @@ const S = {
   sel: null, // case affichée dans la fiche
   trade: { to: null, give: [], get: [], giveCash: 0, getCash: 0 },
   clockOffset: 0,
+  rooms: [], // salons ouverts (annuaire)
   status: "",
   error: "",
 };
@@ -63,12 +64,12 @@ function view() {
   return gameView(warn);
 }
 
-const page = (html) => `<div class="em-page"><div class="em-title"><span class="logo">E</span>Empire IDF</div>${html}</div>`;
+const page = (html) => `<div class="em-page"><div class="em-title"><img class="logo" src="logo.svg" alt="">Empire IDF</div>${html}</div>`;
 const leaveButton = () => `<button class="ghost btn-ic" onclick="A.leave()">${ic("log-out")} Quitter</button>`;
 
 function homeView() {
   const joinCode = new URLSearchParams(location.search).get("salon") || "";
-  const saved = JSON.parse(localStorage.getItem("em-host") || "null");
+  const saved = JSON.parse(localStorage.getItem("em-host-v2") || "null");
   return `
     ${card(`
       <p class="muted" style="margin-top:0">Achète les villes d'Île-de-France, complète les départements, construis des tours et ruine tes potes.</p>
@@ -88,12 +89,13 @@ function homeView() {
         <summary><b>Les règles</b></summary>
         <p class="muted">Lance les dés et fais le tour du plateau. Achète les villes où tu t'arrêtes, ou mets-les aux enchères. Les autres te payent un loyer quand ils tombent chez toi.</p>
         <p class="muted">Possède tout un département pour doubler les loyers et construire : Résidence, Immeuble, puis Tour. Les 4 grandes gares rapportent plus si tu en as plusieurs.</p>
-        <p class="muted">Événement : cartes surprises. Taxe foncière : va dans la cagnotte. Pause terrasse : rafle la cagnotte. Garde à vue : direction la prison de Fleury. En prison, tu sors avec un double, en payant ${EM.JAIL_FEE} € ou avec une carte « Libéré sous caution ».</p>
+        <p class="muted">Chance : cartes surprises. Taxe foncière : va dans la cagnotte. Pause terrasse : rafle la cagnotte. Garde à vue : direction la prison de Fleury. En prison, tu sors avec un double, en payant ${EM.JAIL_FEE} € ou avec une carte « Libéré sous caution ».</p>
         <p class="muted">Mode événements : à chaque tour de table, l'Île-de-France peut être secouée (manif, émeutes, essence, tweet de Trump…), ce qui fait varier les loyers, les prix et ton argent.</p>
         <p class="muted">Tous les 10 tours, les loyers augmentent de 20 %. Fin au nombre de tours choisi (le plus gros patrimoine gagne) ou à la faillite (au plus tard après ${EM.MAX_ROUNDS} tours).</p>
         <p class="muted" style="font-size:.75rem">Personnages : DiceBear « Adventurer » (Lisa Wischofsky, CC BY 4.0). Photos : Wikipédia / Wikimedia Commons.</p>
       </details>
     `)}
+    ${card(`<div class="em-h">${ic("users")} Salons ouverts</div>${Common.roomsView(S.rooms, { root: "../", game: "empire" })}`)}
     <p class="center"><a href="../" class="muted">← Tous les jeux</a></p>`;
 }
 
@@ -144,15 +146,16 @@ function lobbyView() {
 
 // ---------- Plateau ----------
 
-// Ligne / colonne de la case i (grille 9 × 9, départ en bas à droite).
+// Ligne / colonne de la case i (grille 10 × 10 : 4 coins + 8 cases par côté, départ en bas à droite).
+const N = 10;
 function cellPos(i) {
-  if (i <= 8) return [9, 9 - i];
-  if (i <= 16) return [9 - (i - 8), 1];
-  if (i <= 24) return [1, 1 + (i - 16)];
-  return [1 + (i - 24), 9];
+  if (i <= 9) return [N, N - i];
+  if (i <= 18) return [N - (i - 9), 1];
+  if (i <= 27) return [1, 1 + (i - 18)];
+  return [1 + (i - 27), N];
 }
 // Côté du plateau : la bande de couleur regarde le centre, le propriétaire est sur le bord extérieur.
-const side = (i) => (i < 8 ? "s-b" : i < 16 ? "s-l" : i < 24 ? "s-t" : "s-r");
+const side = (i) => (i < 9 ? "s-b" : i < 18 ? "s-l" : i < 27 ? "s-t" : "s-r");
 
 function cellView(s, i) {
   const g = S.game;
@@ -411,7 +414,7 @@ function spaceSheet(i) {
       jail: `Prison de Fleury : sors avec un double, en payant ${EM.JAIL_FEE} € ou avec une carte « Libéré sous caution ». En simple visite, rien ne se passe.`,
       pause: "Celui qui s'arrête ici rafle la cagnotte.",
       control: "Garde à vue : direction la prison !",
-      event: "Tire une carte Événement : bonne ou mauvaise surprise.",
+      event: "Tire une carte Chance : bonne ou mauvaise surprise.",
       tax: `Paye ${s.amount} € à la cagnotte.`,
     }[s.type];
     rows = `<tr><td colspan="2" style="text-align:left;font-weight:400">${txt}</td></tr>`;
@@ -452,7 +455,7 @@ function gameView(warn) {
   return `
     <div class="em-app">
       <aside class="em-side">
-        <div class="em-title" style="margin:0;font-size:1.15rem"><span class="logo">E</span>Empire IDF</div>
+        <div class="em-title" style="margin:0;font-size:1.15rem"><img class="logo" src="logo.svg" alt="">Empire IDF</div>
         <div class="em-topline"><span>${round}</span><span>Salon <b>${esc(S.code)}</b></span></div>
         ${warn}
         <div class="em-h">${ic("users")} Joueurs</div>
@@ -510,7 +513,8 @@ const Anim = (() => {
   // Centre d'une case en % du plateau (coins 1,45 fois plus grands).
   function center(i) {
     const [row, col] = cellPos(i);
-    const at = (k) => (k === 1 ? 0.725 : k === 9 ? 1.45 + 7 + 0.725 : 1.45 + (k - 2) + 0.5) / 9.9 * 100;
+    const inner = N - 2; // cases entre deux coins
+    const at = (k) => (k === 1 ? 0.725 : k === N ? 1.45 + inner + 0.725 : 1.45 + (k - 2) + 0.5) / (2.9 + inner) * 100;
     return [at(col), at(row)];
   }
 
@@ -687,7 +691,7 @@ const Anim = (() => {
       st.rollId = g.rollId;
     }
     if (g.card && g.card.id !== st.cardId) {
-      if (!first) kickerPop("sparkles", "CARTE ÉVÉNEMENT", EM.P(g, g.card.pid)?.name || "", g.card.text, g.card.good ? "good" : "bad");
+      if (!first) kickerPop("sparkles", "CARTE CHANCE", EM.P(g, g.card.pid)?.name || "", g.card.text, g.card.good ? "good" : "bad");
       st.cardId = g.card.id;
     }
     if (g.event && g.event.id !== st.eventId) {
@@ -871,7 +875,7 @@ const A = {
     S.mode = "host";
     S.hostId = S.me;
     S.avatars[S.me] = S.avatar;
-    const saved = JSON.parse(localStorage.getItem("em-host") || "null");
+    const saved = JSON.parse(localStorage.getItem("em-host-v2") || "null");
     if (resume && saved) Object.assign(S, { code: saved.code, game: saved.game, bots: saved.bots || [], settings: saved.settings || S.settings, avatars: saved.avatars || S.avatars });
     else S.code = Common.randomCode();
     connect();
@@ -902,9 +906,14 @@ const A = {
     if (navigator.share) navigator.share({ title: "Empire IDF", text: "Rejoins ma partie d'Empire IDF !", url: link }).catch(() => {});
     else navigator.clipboard.writeText(link).then(() => toast("Lien copié !"));
   },
-  leave() {
-    if (S.game && S.mode === "host" && S.game.stage !== "end" && !confirm("Quitter la partie ?")) return;
-    if (S.mode === "host") localStorage.removeItem("em-host");
+  // force : salon fermé à distance par son créateur (pas de confirmation).
+  leave(force) {
+    if (!force && S.game && S.mode === "host" && S.game.stage !== "end" && !confirm("Quitter la partie ?")) return;
+    if (S.mode === "host") {
+      localStorage.removeItem("em-host-v2");
+      room?.send("state", { closed: true });
+      Common.announceRoom(null);
+    }
     room?.leave();
     room = null;
     clearInterval(hostTimer);
@@ -932,11 +941,22 @@ function readName() {
 function act(fn) {
   if (S.game && fn) fn(S.game);
   if (S.mode === "host") {
-    localStorage.setItem("em-host", JSON.stringify({ code: S.code, game: S.game, bots: S.bots, settings: S.settings, avatars: S.avatars }));
+    localStorage.setItem("em-host-v2", JSON.stringify({ code: S.code, game: S.game, bots: S.bots, settings: S.settings, avatars: S.avatars }));
     room?.send("state", { hostId: S.me, game: S.game, lobby: S.lobby, bots: S.bots, settings: S.settings, avatars: S.avatars, now: Date.now() });
+    Common.announceRoom({ game: "empire", code: S.code, host: S.name, hostId: S.me, players: S.game ? S.game.players.length : allPlayers().length, status: S.game ? "playing" : "lobby" });
   }
   render();
 }
+
+// Annuaire des salons : liste sur l'accueil, et fermeture à distance par le créateur.
+Common.watchRooms((rooms) => {
+  S.rooms = rooms;
+  if (!S.mode) render();
+});
+Common.onCloseRequest("empire", () => (S.mode === "host" ? { code: S.code, hostId: S.me } : null), () => {
+  toast("Salon supprimé.");
+  A.leave(true);
+});
 
 // L'hôte fait avancer les enchères et joue pour les robots, en attendant la fin des animations.
 let hostTimer = null;
@@ -958,6 +978,10 @@ function connect() {
   room = Common.joinRoom("empire-" + S.code, S.me, S.name, {
     events: ["state", "act", "pick"],
     message(event, payload) {
+      if (event === "state" && S.mode === "player" && payload.closed) {
+        toast("L'hôte a fermé le salon.");
+        return A.leave(true);
+      }
       if (event === "state" && S.mode === "player") {
         const firstContact = !S.hostId;
         Object.assign(S, {
