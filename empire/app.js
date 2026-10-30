@@ -519,7 +519,8 @@ const Anim = (() => {
   const justLanded = () => Date.now() < st.landedUntil;
   const diceFaces = () => st.faces;
   const justBought = (i) => Date.now() - (st.bought[i] || 0) < 1100;
-  const busy = () => rolling() || !!st.mover || popQueue.length > 0 || popOpen;
+  // Une fiche ouverte ne doit pas bloquer les robots (les fenêtres en attente patientent).
+  const busy = () => rolling() || !!st.mover || popOpen || (popQueue.length > 0 && !S.sheet);
 
   // Centre d'une case en % du plateau (coins 1,45 fois plus grands).
   function center(i) {
@@ -598,12 +599,17 @@ const Anim = (() => {
   // File de fenêtres (arrivée sur une ville, événement, carte, prison) : une à la fois.
   const popQueue = [];
   let popOpen = false;
+  // Rien ne s'affiche par-dessus une fiche ouverte : les fenêtres attendent qu'elle se ferme,
+  // et celles devenues trop vieilles (plus de 10 s) sont oubliées.
   function queuePop(html, cls, ms = 3200) {
-    popQueue.push({ html, cls, ms });
+    popQueue.push({ html, cls, ms, at: Date.now() });
     if (!st.mover) nextPop();
   }
   function nextPop() {
-    if (popOpen || !popQueue.length) return;
+    if (popOpen || S.sheet) return;
+    const stale = (q) => (q.cls === "buy" ? S.game?.stage !== "buy" : Date.now() - q.at > 10000);
+    while (popQueue.length && stale(popQueue[0])) popQueue.shift();
+    if (!popQueue.length) return;
     const { html, cls, ms } = popQueue.shift();
     popOpen = true;
     const el = document.createElement("div");
@@ -813,7 +819,16 @@ const Anim = (() => {
     return "";
   }
 
-  return { rolling, justLanded, diceFaces, justBought, busy, pawnStyle, afterRender, reset, photoNow };
+  // Ouvrir une fiche ferme la fenêtre affichée (sauf la fiche d'achat, qui reviendra après).
+  function hidePop() {
+    const el = document.querySelector(".em-pop");
+    if (!el) return;
+    if (el.classList.contains("buy")) popQueue.unshift({ html: el.innerHTML, cls: "buy", ms: 12000, at: Date.now() });
+    el.remove();
+    popOpen = false;
+  }
+
+  return { rolling, justLanded, diceFaces, justBought, busy, pawnStyle, afterRender, reset, photoNow, hidePop, nextPop };
 })();
 
 // ---------- Actions ----------
@@ -835,16 +850,19 @@ const A = {
   select(i) {
     S.sel = i;
     S.sheet = i === null ? null : "space";
+    Anim.hidePop();
     render();
   },
   openSheet(name) {
     S.sheet = name;
+    Anim.hidePop();
     render();
   },
   closeSheet() {
     S.sheet = null;
     S.sel = null;
     render();
+    Anim.nextPop();
   },
   pickAvatar(a) {
     S.avatar = a;
