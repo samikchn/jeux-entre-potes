@@ -40,7 +40,9 @@ const isHost = () => S.mode === "host";
 const me = () => S.game && EM.P(S.game, S.me);
 const money = (n) => `${Math.round(n).toLocaleString("fr-FR")} €`;
 const plain = (t) => String(t).replace(/­/g, "");
-const spaceColor = (s) => (s.type === "prop" ? GROUPS[s.group].color : s.type === "rer" ? "#94a3b8" : "#e5e7eb");
+const spaceColor = (s) => (s.type === "prop" ? GROUPS[s.group].color : s.type === "rer" ? "#94a3b8" : s.type === "util" ? "#5eead4" : "#e5e7eb");
+// Sous-titre d'une case achetable : département, gare ou service.
+const kindName = (s) => (s.type === "prop" ? GROUPS[s.group].name : s.type === "rer" ? "Gare parisienne" : s.type === "util" ? "Service" : "Case spéciale");
 const avatarImg = (p, cls = "av") => `<img class="${cls}" style="--pc:${p.color || "#555"}" src="${avatarUrl(p.avatar)}" alt="">`;
 
 // ---------- Rendu ----------
@@ -69,7 +71,7 @@ const leaveButton = () => `<button class="ghost btn-ic" onclick="A.leave()">${ic
 
 function homeView() {
   const joinCode = new URLSearchParams(location.search).get("salon") || "";
-  const saved = JSON.parse(localStorage.getItem("em-host-v2") || "null");
+  const saved = JSON.parse(localStorage.getItem("em-host-v3") || "null");
   return `
     ${card(`
       <p class="muted" style="margin-top:0">Achète les villes d'Île-de-France, complète les départements, construis des tours et ruine tes potes.</p>
@@ -88,8 +90,8 @@ function homeView() {
       <details id="rules">
         <summary><b>Les règles</b></summary>
         <p class="muted">Lance les dés et fais le tour du plateau. Achète les villes où tu t'arrêtes, ou mets-les aux enchères. Les autres te payent un loyer quand ils tombent chez toi.</p>
-        <p class="muted">Possède tout un département pour doubler les loyers et construire : Résidence, Immeuble, puis Tour. Les 4 grandes gares rapportent plus si tu en as plusieurs.</p>
-        <p class="muted">Chance : cartes surprises. Taxe foncière : va dans la cagnotte. Pause terrasse : rafle la cagnotte. Garde à vue : direction la prison de Fleury. En prison, tu sors avec un double, en payant ${EM.JAIL_FEE} € ou avec une carte « Libéré sous caution ».</p>
+        <p class="muted">Possède tout un département pour doubler les loyers et construire : Résidence, Immeuble, puis Tour. Les 4 grandes gares (au milieu de chaque côté) rapportent plus si tu en as plusieurs. Les 2 services (Antenne 5G, Data center) font payer 4 fois les dés, 10 fois si tu as les deux.</p>
+        <p class="muted">Chance : cartes surprises. Les potes : les cartes de la bande. Taxe foncière : va dans la cagnotte. Pause terrasse : rafle la cagnotte. Garde à vue : direction la prison de Fleury. En prison, tu sors avec un double, en payant ${EM.JAIL_FEE} € ou avec une carte « Libéré sous caution ».</p>
         <p class="muted">Mode événements : à chaque tour de table, l'Île-de-France peut être secouée (manif, émeutes, essence, tweet de Trump…), ce qui fait varier les loyers, les prix et ton argent.</p>
         <p class="muted">Tous les 10 tours, les loyers augmentent de 20 %. Fin au nombre de tours choisi (le plus gros patrimoine gagne) ou à la faillite (au plus tard après ${EM.MAX_ROUNDS} tours).</p>
         <p class="muted" style="font-size:.75rem">Personnages : DiceBear « Adventurer » (Lisa Wischofsky, CC BY 4.0). Photos : Wikipédia / Wikimedia Commons.</p>
@@ -146,16 +148,16 @@ function lobbyView() {
 
 // ---------- Plateau ----------
 
-// Ligne / colonne de la case i (grille 10 × 10 : 4 coins + 8 cases par côté, départ en bas à droite).
-const N = 10;
+// Ligne / colonne de la case i (grille 11 × 11 : 4 coins + 9 cases par côté, départ en bas à droite).
+const N = 11;
 function cellPos(i) {
-  if (i <= 9) return [N, N - i];
-  if (i <= 18) return [N - (i - 9), 1];
-  if (i <= 27) return [1, 1 + (i - 18)];
-  return [1 + (i - 27), N];
+  if (i <= 10) return [N, N - i];
+  if (i <= 20) return [N - (i - 10), 1];
+  if (i <= 30) return [1, 1 + (i - 20)];
+  return [1 + (i - 30), N];
 }
 // Côté du plateau : la bande de couleur regarde le centre, le propriétaire est sur le bord extérieur.
-const side = (i) => (i < 9 ? "s-b" : i < 18 ? "s-l" : i < 27 ? "s-t" : "s-r");
+const side = (i) => (i < 10 ? "s-b" : i < 20 ? "s-l" : i < 30 ? "s-t" : "s-r");
 
 function cellView(s, i) {
   const g = S.game;
@@ -171,7 +173,7 @@ function cellView(s, i) {
   }
   if (s.type === "event" || s.type === "tax") {
     return `<button class="cell special ${s.type} ${side(i)} ${cls}" style="${pos}" onclick="A.select(${i})">
-      <span class="ct"><span class="big">${ic(SPACE_ICON[s.type])}</span><span class="nm" style="--n:${label.length}">${esc(label)}</span></span></button>`;
+      <span class="ct"><span class="big">${ic(s.icon || SPACE_ICON[s.type])}</span><span class="nm" style="--n:${label.length}">${esc(label)}</span></span></button>`;
   }
   const tint = owner ? `--cbg:color-mix(in srgb, ${owner.color} 16%, #1b1f27);--oc:${owner.color}` : "";
   const info = lvl
@@ -251,7 +253,7 @@ function centerView() {
     const cost = EM.price(g, cur.pos);
     return `
       <div class="em-deed"><div class="hd" style="background:${spaceColor(s)}">${esc(plain(s.name))}</div>
-        <div class="bd">${s.type === "prop" ? esc(GROUPS[s.group].name) : "Gare parisienne"}<br><b>${money(cost)}</b>${cost !== s.price ? ` <s>${s.price} €</s>` : ""}</div></div>
+        <div class="bd">${esc(kindName(s))}<br><b>${money(cost)}</b>${cost !== s.price ? ` <s>${s.price} €</s>` : ""}</div></div>
       <div class="row"><button onclick="A.do('buy')" ${p.cash >= cost ? "" : "disabled"}>Acheter</button>
         <button class="secondary" onclick="A.do('auction')">Enchères</button></div>
       ${feed}`;
@@ -306,7 +308,7 @@ function myPropsView() {
     return `<li>
       <span class="sw" style="background:${spaceColor(s)}"></span>
       <span class="tx" onclick="A.select(${i})"><b>${esc(plain(s.name))}</b>
-        <small>${lvl ? LEVELS[lvl] : full ? "Département complet" : s.type === "rer" ? "Gare" : "Terrain"} · loyer ${money(EM.rent(g, i))}</small></span>
+        <small>${lvl ? LEVELS[lvl] : full ? "Département complet" : s.type === "rer" ? "Gare" : s.type === "util" ? "Service" : "Terrain"} · loyer ${money(EM.rent(g, i))}</small></span>
       ${canBuildNow && EM.canBuild(g, p.id, i) && p.cash >= s.build ? `<button class="icon" title="Construire (${s.build} €)" onclick="A.do('build', {space: ${i}})">${ic("hammer")}</button>` : ""}
       ${canAct && lvl ? `<button class="icon secondary" title="Revendre une construction" onclick="A.do('sellLevel', {space: ${i}})">${ic("house")}</button>` : ""}
       ${canAct && !lvl ? `<button class="icon secondary" title="Revendre à la banque" onclick="A.sellProp(${i})">${ic("wallet")}</button>` : ""}
@@ -408,20 +410,22 @@ function spaceSheet(i) {
       <tr><td>Prix d'une construction</td><td>${s.build} €</td></tr>`;
   } else if (s.type === "rer") {
     rows = [1, 2, 3, 4].map((n) => `<tr><td>${n} gare${n > 1 ? "s" : ""} possédée${n > 1 ? "s" : ""}</td><td>${25 * 2 ** (n - 1)} €</td></tr>`).join("");
+  } else if (s.type === "util") {
+    rows = `<tr><td>1 service possédé</td><td>4 × les dés</td></tr><tr><td>2 services possédés</td><td>10 × les dés</td></tr>`;
   } else {
     const txt = {
       start: `Touche ${START_BONUS} € à chaque passage.`,
       jail: `Prison de Fleury : sors avec un double, en payant ${EM.JAIL_FEE} € ou avec une carte « Libéré sous caution ». En simple visite, rien ne se passe.`,
       pause: "Celui qui s'arrête ici rafle la cagnotte.",
       control: "Garde à vue : direction la prison !",
-      event: "Tire une carte Chance : bonne ou mauvaise surprise.",
+      event: s.deck === "potes" ? "Tire une carte « Les potes » : les galères (et les bons plans) de la bande." : "Tire une carte Chance : bonne ou mauvaise surprise.",
       tax: `Paye ${s.amount} € à la cagnotte.`,
     }[s.type];
     rows = `<tr><td colspan="2" style="text-align:left;font-weight:400">${txt}</td></tr>`;
   }
   return `
     <div class="deed-hd" style="background:${spaceColor(s)}">
-      <small>${s.type === "prop" ? esc(GROUPS[s.group].name) : s.type === "rer" ? "Gare parisienne" : "Case spéciale"}${info ? ` · ${info[0]}` : ""}</small>
+      <small>${esc(kindName(s))}${info ? ` · ${info[0]}` : ""}</small>
       <h2>${esc(plain(s.name))}</h2>${s.price ? `<b>${money(EM.price(g, i))}</b>` : ""}
     </div>
     <table>${rows}</table>
@@ -628,19 +632,25 @@ const Anim = (() => {
     }
   }
 
-  // Quand MON pion s'arrête sur une ville ou une gare : fiche avec photo et code postal.
+  // Quand MON pion s'arrête sur une ville, une gare ou un service : fiche avec photo et code
+  // postal. Si elle est à vendre, on l'achète (ou on lance les enchères) directement depuis la fiche.
   async function landed(i) {
     const s = SPACES[i];
-    if (s.type !== "prop" && s.type !== "rer") return;
+    if (!["prop", "rer", "util"].includes(s.type)) return;
     const g = S.game;
     const info = CITY_INFO[s.name] || ["", ""];
     const owner = g.owners[i] !== undefined ? EM.P(g, g.owners[i]) : null;
-    const url = await photo(info[1]); // la photo d'abord : la fiche peut attendre son tour dans la file
+    const url = info[1] ? await photo(info[1]) : ""; // la photo d'abord : la fiche peut attendre son tour dans la file
+    const p = me();
+    const forSale = !owner && S.game.stage === "buy" && EM.current(S.game).id === S.me;
+    const cost = EM.price(g, i);
     queuePop(`
-      <div class="ph" style="${url ? `background-image:url('${url.replace(/'/g, "%27")}')` : ""}"><span class="cp">${info[0]}</span></div>
-      <div class="band" style="background:${spaceColor(s)}"><small>${s.type === "prop" ? esc(GROUPS[s.group].name) : "Gare parisienne"}</small><h3>${esc(plain(s.name))}</h3></div>
-      <div class="bd">${owner ? (owner.id === S.me ? "Chez toi !" : `Propriété de <b style="color:${owner.color}">${esc(owner.name)}</b> · loyer <b>${money(EM.rent(g, i))}</b>`) : `À vendre : <b>${money(EM.price(g, i))}</b>`}</div>
-      <div class="credit">Photo : Wikipédia</div>`, "", 3000);
+      ${info[0] ? `<div class="ph" style="${url ? `background-image:url('${url.replace(/'/g, "%27")}')` : ""}"><span class="cp">${info[0]}</span></div>` : ""}
+      <div class="band" style="background:${spaceColor(s)}"><small>${esc(kindName(s))}</small><h3>${esc(plain(s.name))}</h3></div>
+      <div class="bd">${owner ? (owner.id === S.me ? "Chez toi !" : `Propriété de <b style="color:${owner.color}">${esc(owner.name)}</b> · loyer <b>${money(EM.rent(g, i))}</b>`) : `À vendre : <b>${money(cost)}</b>`}</div>
+      ${forSale ? `<div class="acts"><button onclick="A.do('buy')" ${p.cash >= cost ? "" : "disabled"}>Acheter ${money(cost)}</button>
+        <button class="secondary" onclick="A.do('auction')">Enchères</button></div>` : ""}
+      ${url ? `<div class="credit">Photo : Wikipédia</div>` : ""}`, forSale ? "buy" : "", forSale ? 12000 : 3000);
   }
 
   function floatMoney(pid, diff) {
@@ -685,13 +695,15 @@ const Anim = (() => {
   function afterRender() {
     const g = S.game;
     const first = st.owners === null;
+    // Fiche d'achat ouverte alors que l'achat est réglé (acheté, enchères…) : on la ferme.
+    if (g.stage !== "buy") document.querySelector(".em-pop.buy")?.click();
     if (g.rollId && g.rollId !== st.rollId) {
       if (st.rollId !== null) rollDice(g.dice);
       else st.faces = g.dice;
       st.rollId = g.rollId;
     }
     if (g.card && g.card.id !== st.cardId) {
-      if (!first) kickerPop("sparkles", "CARTE CHANCE", EM.P(g, g.card.pid)?.name || "", g.card.text, g.card.good ? "good" : "bad");
+      if (!first) kickerPop(g.card.deck === "potes" ? "users" : "sparkles", g.card.deck === "potes" ? "CARTE LES POTES" : "CARTE CHANCE", EM.P(g, g.card.pid)?.name || "", g.card.text, g.card.good ? "good" : "bad");
       st.cardId = g.card.id;
     }
     if (g.event && g.event.id !== st.eventId) {
@@ -875,7 +887,7 @@ const A = {
     S.mode = "host";
     S.hostId = S.me;
     S.avatars[S.me] = S.avatar;
-    const saved = JSON.parse(localStorage.getItem("em-host-v2") || "null");
+    const saved = JSON.parse(localStorage.getItem("em-host-v3") || "null");
     if (resume && saved) Object.assign(S, { code: saved.code, game: saved.game, bots: saved.bots || [], settings: saved.settings || S.settings, avatars: saved.avatars || S.avatars });
     else S.code = Common.randomCode();
     connect();
@@ -910,7 +922,7 @@ const A = {
   leave(force) {
     if (!force && S.game && S.mode === "host" && S.game.stage !== "end" && !confirm("Quitter la partie ?")) return;
     if (S.mode === "host") {
-      localStorage.removeItem("em-host-v2");
+      localStorage.removeItem("em-host-v3");
       room?.send("state", { closed: true });
       Common.announceRoom(null);
     }
@@ -941,7 +953,7 @@ function readName() {
 function act(fn) {
   if (S.game && fn) fn(S.game);
   if (S.mode === "host") {
-    localStorage.setItem("em-host-v2", JSON.stringify({ code: S.code, game: S.game, bots: S.bots, settings: S.settings, avatars: S.avatars }));
+    localStorage.setItem("em-host-v3", JSON.stringify({ code: S.code, game: S.game, bots: S.bots, settings: S.settings, avatars: S.avatars }));
     room?.send("state", { hostId: S.me, game: S.game, lobby: S.lobby, bots: S.bots, settings: S.settings, avatars: S.avatars, now: Date.now() });
     Common.announceRoom({ game: "empire", code: S.code, host: S.name, hostId: S.me, players: S.game ? S.game.players.length : allPlayers().length, status: S.game ? "playing" : "lobby" });
   }

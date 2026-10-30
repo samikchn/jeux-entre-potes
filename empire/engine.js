@@ -47,7 +47,7 @@ const EM = (() => {
       owners: {},
       levels: {},
       pot: 0,
-      deck: shuffle(CARDS.map((_, i) => i)),
+      decks: {},
       dice: null,
       doubles: 0,
       card: null,
@@ -90,6 +90,9 @@ const EM = (() => {
     if (s.type === "rer") {
       const n = SPACES.filter((x) => x.type === "rer" && g.owners[x.index] === owner).length;
       base = 25 * 2 ** (n - 1);
+    } else if (s.type === "util") {
+      const n = SPACES.filter((x) => x.type === "util" && g.owners[x.index] === owner).length;
+      base = (g.dice ? g.dice[0] + g.dice[1] : 7) * (n > 1 ? 10 : 4);
     } else {
       const lvl = level(g, i);
       if (lvl > 0) base = s.rent * LEVEL_MULT[lvl];
@@ -163,7 +166,7 @@ const EM = (() => {
   function land(g, p, next) {
     const s = SPACES[p.pos];
     g.stage = next;
-    if (s.type === "prop" || s.type === "rer") {
+    if (s.type === "prop" || s.type === "rer" || s.type === "util") {
       const owner = g.owners[p.pos];
       if (owner === undefined) {
         g.stage = "buy";
@@ -186,16 +189,17 @@ const EM = (() => {
       sendToJail(g, p);
       g.stage = "done";
     } else if (s.type === "event") {
-      drawCard(g, p, next);
+      drawCard(g, p, next, s.deck);
     }
   }
 
-  function drawCard(g, p, next) {
-    if (!g.deck.length) g.deck = shuffle(CARDS.map((_, i) => i));
-    const c = CARDS[g.deck.shift()];
+  function drawCard(g, p, next, deck = "chance") {
+    g.decks = g.decks || {};
+    if (!g.decks[deck]?.length) g.decks[deck] = shuffle(CARDS.map((c, i) => ((c.deck || "chance") === deck ? i : -1)).filter((i) => i >= 0));
+    const c = CARDS[g.decks[deck].shift()];
     // cardId / rollId : compteurs qui permettent à l'interface de lancer ses animations.
     g.cardId = (g.cardId || 0) + 1;
-    g.card = { text: c.text, pid: p.id, id: g.cardId, good: !!(c.cash > 0 || c.fromEach || c.jailCard) };
+    g.card = { text: c.text, pid: p.id, id: g.cardId, deck, good: !!(c.cash > 0 || c.fromEach || c.jailCard) };
     log(g, `${p.name} : ${c.text}`);
     const others = active(g).filter((q) => q.id !== p.id);
     if (c.cash > 0) p.cash += c.cash;
@@ -207,7 +211,8 @@ const EM = (() => {
         p.cash += paid;
       }
     } else if (c.toEach) {
-      charge(g, p, c.toEach * others.length, null, next) && others.forEach((q) => (q.cash += c.toEach));
+      if (charge(g, p, c.toEach * others.length, null, next)) others.forEach((q) => (q.cash += c.toEach));
+      else g.debt.each = c.toEach; // versé aux autres une fois la dette réglée
     } else if (c.perLevel) {
       const levels = owned(g, p.id).reduce((s, i) => s + level(g, i), 0);
       charge(g, p, levels * c.perLevel, "pot", next);
@@ -350,6 +355,7 @@ const EM = (() => {
     g.debt = null;
     g.stage = d.next;
     charge(g, p, d.amount, d.to, d.next);
+    if (d.each) active(g).filter((q) => q.id !== p.id).forEach((q) => (q.cash += d.each));
     if (g.pendingMove) {
       const total = g.pendingMove;
       g.pendingMove = null;
@@ -371,6 +377,7 @@ const EM = (() => {
     p.bankrupt = true;
     p.jail = 0;
     if (g.trade && (g.trade.from === p.id || g.trade.to === p.id)) g.trade = null;
+    g.pendingMove = null; // déplacement en attente (sortie de prison impayée) : annulé
     log(g, `${p.name} fait faillite${creditor ? ` : tout revient à ${creditor.name}` : ""}.`);
     const wasTurn = current(g).id === p.id;
     g.debt = null;

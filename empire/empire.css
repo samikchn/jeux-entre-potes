@@ -58,7 +58,7 @@ body.em input { background: var(--bg); border-color: var(--line); border-radius:
 /* ---------- Plateau ---------- */
 .em-board {
   position: relative; display: grid; aspect-ratio: 1; width: min(100%, calc(100dvh - 20px)); max-width: 100%;
-  grid-template-columns: 1.45fr repeat(8, minmax(0, 1fr)) 1.45fr; grid-template-rows: 1.45fr repeat(8, minmax(0, 1fr)) 1.45fr;
+  grid-template-columns: 1.45fr repeat(9, minmax(0, 1fr)) 1.45fr; grid-template-rows: 1.45fr repeat(9, minmax(0, 1fr)) 1.45fr;
   gap: 2px; padding: 2px; background: #090b0e; border-radius: 12px; border: 1px solid var(--line);
 }
 @media (max-width: 899px) { .em-board { width: min(100%, calc(100dvh - 200px)); } }
@@ -99,7 +99,7 @@ body.em input { background: var(--bg); border-color: var(--line); border-radius:
 
 /* Centre du plateau */
 .em-center {
-  grid-row: 2 / 10; grid-column: 2 / 10; margin: 6px; border-radius: 10px; background: #12151b; border: 1px solid var(--line);
+  grid-row: 2 / 11; grid-column: 2 / 11; margin: 6px; border-radius: 10px; background: #12151b; border: 1px solid var(--line);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 10px; text-align: center; min-height: 0; overflow: hidden;
 }
 .em-center .brand { font-weight: 900; letter-spacing: .3em; font-size: .7rem; color: #3a4252; }
@@ -130,12 +130,12 @@ body.em input { background: var(--bg); border-color: var(--line); border-radius:
 /* Pions : le personnage du joueur */
 .em-pawns { position: absolute; inset: 2px; pointer-events: none; }
 .pawn {
-  position: absolute; width: 5%; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%;
+  position: absolute; width: 4.6%; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%;
   background: var(--pc); border: 2px solid var(--pc); box-shadow: 0 3px 8px rgba(0, 0, 0, .7); overflow: hidden;
   transition: left .13s ease-out, top .13s ease-out; z-index: 4;
 }
 .pawn img { width: 100%; height: 100%; display: block; background: #fff; }
-.pawn.turn { width: 6.2%; z-index: 5; box-shadow: 0 0 0 3px rgba(255, 255, 255, .85), 0 4px 12px rgba(0, 0, 0, .7); }
+.pawn.turn { width: 5.6%; z-index: 5; box-shadow: 0 0 0 3px rgba(255, 255, 255, .85), 0 4px 12px rgba(0, 0, 0, .7); }
 .pawn.hop { animation: hop .13s ease-out; }
 @keyframes hop { 50% { transform: translate(-50%, -65%) scale(1.08); } }
 
@@ -204,6 +204,8 @@ button.em-ptile.on { border-color: var(--gold); transform: translateY(-2px); }
 .em-pop .bd { padding: 10px 12px 12px; font-size: .85rem; color: var(--mut); }
 .em-pop .bd b { color: var(--txt); }
 .em-pop .credit { font-size: .62rem; color: var(--mut); padding: 0 12px 8px; }
+.em-pop .acts { display: flex; gap: 8px; padding: 0 12px 12px; }
+.em-pop .acts button { flex: 1; margin: 0; padding: 11px 8px; font-size: .9rem; }
 .em-pop .kicker ~ .bd { text-align: center; }
 .em-pop .kicker { text-align: center; padding: 18px 12px 0; }
 .em-pop .kicker .ic { width: 42px; height: 42px; color: var(--gold); }
