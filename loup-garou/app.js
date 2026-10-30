@@ -896,6 +896,11 @@ function resetSelections() {
   S.witch = { heal: null, kill: null };
 }
 
+// Journal en direct du narrateur : redessine quand une ligne arrive.
+window.addEventListener("narrator-log", () => {
+  if (S.mode === "local" && S.game && Auto.showLog()) render();
+});
+
 // Les voix du téléphone arrivent après le chargement : on redessine le choix de la voix.
 window.addEventListener("narrator-voices", () => {
   if (S.mode === "local" && !S.game) render();

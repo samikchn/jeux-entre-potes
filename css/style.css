@@ -300,3 +300,9 @@ button.danger { background: linear-gradient(135deg, #dc2626, #f97316); }
   box-shadow: 0 10px 30px rgba(0, 0, 0, .4);
   animation: pop .2s ease-out;
 }
+.live-log {
+  font-family: ui-monospace, Menlo, monospace; font-size: .72rem; line-height: 1.45;
+  background: rgba(0, 0, 0, .3); border-radius: 10px; padding: 8px; margin-top: 8px;
+  max-height: 220px; overflow: auto; word-break: break-word;
+}
+.live-log .err { color: #fca5a5; }

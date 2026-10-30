@@ -22,7 +22,8 @@ const Auto = (() => {
   // seen : nombre d'infos secrètes (game.priv) déjà montrées à chaque joueur.
   const st = { screen: null, call: null, real: false, actor: null, viewer: null, result: "", story: "", peek: null, run: 0, seen: {}, secretFor: null,
     autoListen: localStorage.getItem("lg-ecoute") === "1", // écoute continue pendant le débat
-    hearing: false, looping: false, addressNext: false, overheard: [], lastOverheard: "" };
+    hearing: false, looping: false, addressNext: false, overheard: [], lastOverheard: "",
+    showLog: localStorage.getItem("lg-log") === "1" }; // journal en direct
   let resolveTap = null;
 
   const g = () => S.game;
@@ -396,6 +397,7 @@ const Auto = (() => {
       }
       const addressed = st.addressNext || /narrat|ma[iî]tre du jeu/i.test(heard);
       st.addressNext = false;
+      Narrator.log(addressed ? "➡️ phrase adressée au narrateur : il répond" : "📝 pas pour le narrateur : gardé en mémoire");
       if (!addressed) {
         st.overheard = [...(st.overheard || []), heard].slice(-12);
         st.lastOverheard = heard;
@@ -639,7 +641,15 @@ const Auto = (() => {
         <span class="muted" style="font-weight:400;font-size:.8rem">${auto
           ? "Il écoute toute la discussion et répond quand on dit « narrateur… » (ou après 🎤)."
           : "Il n'écoute que quand tu appuies sur 🎤 : appuie, parle, puis appuie à nouveau."}</span>
-      </button>`);
+      </button>
+      <button class="secondary" onclick="Auto.toggleLog()">🧾 ${st.showLog ? "Masquer" : "Afficher"} le journal en direct</button>
+      ${st.showLog ? logView() : ""}`);
+  }
+
+  // Journal en direct : ce que fait le narrateur (écoute, IA, voix), pour comprendre un blocage.
+  function logView() {
+    const lines = Narrator.logLines().slice(-15).reverse();
+    return `<div class="live-log">${lines.length ? lines.map((l) => `<div class="${l.includes("✖") ? "err" : ""}">${esc(l)}</div>`).join("") : "<div>Rien pour l'instant.</div>"}</div>`;
   }
 
   return {
@@ -684,6 +694,12 @@ const Auto = (() => {
     talk,
     nudge,
     toggleListen,
+    toggleLog() {
+      st.showLog = !st.showLog;
+      localStorage.setItem("lg-log", st.showLog ? "1" : "0");
+      render();
+    },
+    showLog: () => st.showLog,
     mute() {
       Narrator.toggleMute();
       render();

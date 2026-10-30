@@ -52,15 +52,23 @@ const Narrator = (() => {
       u.rate = 0.95;
       current = u;
       lastStarted = false;
-      u.onstart = () => (lastStarted = true);
+      u.onstart = () => {
+        lastStarted = true;
+        log(`🗣️ la voix lit : « ${text.slice(0, 60)}${text.length > 60 ? "…" : ""} »`);
+      };
+      const check = setTimeout(() => !lastStarted && log("✖ la voix n'a pas démarré (mode silencieux ? son coupé ?)"), 3000);
       const done = () => {
         clearTimeout(safety);
+        clearTimeout(check);
         if (current === u) current = null;
         resolve();
       };
       const safety = setTimeout(done, 3000 + text.length * 90);
       u.onend = done;
-      u.onerror = done;
+      u.onerror = (e) => {
+        log("✖ voix : " + (e.error || "erreur"));
+        done();
+      };
       speechSynthesis.speak(u);
     });
   }
@@ -142,13 +150,18 @@ const Narrator = (() => {
     if (!key) return null;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 30000);
+    const start = Date.now();
+    const secs = () => ((Date.now() - start) / 1000).toFixed(1) + " s";
+    log(`🤖 question à l'IA (${provider()})…`);
     try {
       const call = provider() === "claude" ? callClaude : callGemini;
       const text = (await call(key, system, messages, ctrl.signal) || "").replace(/[*#_`]/g, "").trim();
-      lastError = "";
+      lastError = text ? "" : "réponse vide";
+      log(text ? `🤖 réponse en ${secs()} : « ${text.slice(0, 120)}${text.length > 120 ? "…" : ""} »` : `✖ IA : réponse vide (${secs()})`);
       return text || null;
     } catch (e) {
       lastError = e.name === "AbortError" ? "L'IA a mis trop de temps à répondre." : e.message;
+      log(`✖ IA (${secs()}) : ${lastError}`);
       console.warn("IA indisponible :", lastError);
       return null;
     } finally {
@@ -164,35 +177,73 @@ const Narrator = (() => {
   let recognizer = null;
 
   // Écoute une phrase et renvoie le texte compris (null si rien ou si l'écoute est impossible).
-  function listen() {
+  // Safari (iPhone) ne s'arrête pas tout seul quand on se tait : on coupe nous-mêmes après
+  // `silenceMs` sans nouveau mot, ou au bout de `maxMs` au total.
+  function listen({ silenceMs = 1500, maxMs = 12000 } = {}) {
     if (!Recognition) return Promise.resolve(null);
     stop();
     return new Promise((resolve) => {
       const r = new Recognition();
       recognizer = r;
       r.lang = "fr-FR";
-      r.interimResults = false;
+      r.interimResults = true; // pour savoir quand la personne parle encore
+      r.continuous = true;
       r.maxAlternatives = 1;
       let heard = "";
-      r.onresult = (e) => {
-        heard = Array.from(e.results).map((res) => res[0].transcript).join(" ");
-      };
-      r.onerror = (e) => {
-        lastError = e.error === "not-allowed" ? "Micro refusé : autorise le micro pour Safari." : "Écoute impossible : " + e.error;
-      };
-      r.onend = () => {
+      let done = false;
+      let silenceTimer = null;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(silenceTimer);
+        clearTimeout(maxTimer);
+        clearTimeout(endTimer);
         recognizer = null;
         // Sur iPhone, le micro laisse le son en « enregistrement » : on repasse en lecture
         // pour que la voix du narrateur puisse répondre.
         Common.playbackAudio();
+        log(heard.trim() ? `🎤 entendu : « ${heard.trim()} »` : "🎤 rien entendu" + (lastError ? ` (${lastError})` : ""));
         resolve(heard.trim() || null);
       };
-      r.start();
+      let endTimer = null;
+      const halt = () => {
+        try { r.stop(); } catch { /* déjà arrêtée */ }
+        endTimer = setTimeout(finish, 1500); // si Safari n'envoie jamais « fin »
+      };
+      const maxTimer = setTimeout(halt, maxMs);
+      r.onresult = (e) => {
+        heard = Array.from(e.results).map((res) => res[0].transcript).join(" ");
+        clearTimeout(silenceTimer);
+        silenceTimer = setTimeout(halt, silenceMs);
+      };
+      r.onerror = (e) => {
+        lastError = e.error === "not-allowed" ? "Micro refusé : autorise le micro pour Safari." : "Écoute impossible : " + e.error;
+        if (e.error !== "no-speech" && e.error !== "aborted") log("✖ micro : " + e.error);
+      };
+      r.onend = finish;
+      lastError = "";
+      log("🎤 écoute…");
+      try {
+        r.start();
+      } catch (e) {
+        lastError = "Écoute impossible : " + e.message;
+        finish();
+      }
+      stopListening.current = halt;
     });
   }
 
   function stopListening() {
-    if (recognizer) recognizer.stop();
+    if (recognizer && stopListening.current) stopListening.current();
+  }
+
+  // ---------- Journal en direct (option) ----------
+  const logLines = [];
+  function log(msg) {
+    const t = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    logLines.push(`${t} ${msg}`);
+    if (logLines.length > 60) logLines.shift();
+    window.dispatchEvent(new Event("narrator-log"));
   }
 
   return {
@@ -200,5 +251,6 @@ const Narrator = (() => {
     voices: frenchVoices, setVoice, voiceName: () => localStorage.getItem("lg-voice") || "",
     provider, setProvider, apiKey, setApiKey, ask, tell, lastError: () => lastError,
     canListen: () => !!Recognition, listen, stopListening, isListening: () => !!recognizer,
+    log, logLines: () => logLines.slice(),
   };
 })();
