@@ -20,7 +20,9 @@ const Auto = (() => {
   ];
 
   // seen : nombre d'infos secrètes (game.priv) déjà montrées à chaque joueur.
-  const st = { screen: null, call: null, real: false, actor: null, viewer: null, result: "", story: "", peek: null, run: 0, seen: {}, secretFor: null };
+  const st = { screen: null, call: null, real: false, actor: null, viewer: null, result: "", story: "", peek: null, run: 0, seen: {}, secretFor: null,
+    autoListen: localStorage.getItem("lg-ecoute") === "1", // écoute continue pendant le débat
+    hearing: false, looping: false, addressNext: false, overheard: [], lastOverheard: "" };
   let resolveTap = null;
 
   const g = () => S.game;
@@ -327,6 +329,7 @@ const Auto = (() => {
     } else {
       await say(token, "Débattez, puis votez à main levée. Touchez ensuite le joueur éliminé sur l'écran.");
     }
+    if (aiMode() && st.autoListen) listenLoop(token);
     const id = await step(token, voted);
     Narrator.stopListening();
     const game = g();
@@ -366,8 +369,65 @@ const Auto = (() => {
     await announce(token, `Fin de la partie : ${LG.WIN[game.winner].title} Tu peux maintenant révéler tous les rôles : ${roles}. Conclus l'histoire du village avec un mot pour les gagnants.`, LG.WIN[game.winner].title);
   }
 
+  // Écoute continue pendant le débat : le narrateur entend toute la discussion, la garde en
+  // mémoire, et ne répond que si on l'interpelle (« narrateur… ») ou après un appui sur 🎤.
+  async function listenLoop(token) {
+    if (st.looping || !Narrator.canListen()) return;
+    st.looping = true;
+    while (token === st.run && st.screen === "day" && st.autoListen && aiMode()) {
+      // On n'écoute pas pendant que le narrateur réfléchit ou parle (il s'entendrait).
+      if (st.busy || (window.speechSynthesis && speechSynthesis.speaking)) {
+        await sleep(300);
+        continue;
+      }
+      st.hearing = true;
+      render();
+      const heard = await Narrator.listen();
+      st.hearing = false;
+      if (token !== st.run || st.screen !== "day" || !st.autoListen) break;
+      if (!heard) {
+        if (/refusé|not-allowed|service-not-allowed/.test(Narrator.lastError())) {
+          st.autoListen = false;
+          toast("L'écoute continue n'est pas autorisée sur ce téléphone : utilise le bouton 🎤.");
+          break;
+        }
+        await sleep(300); // silence ou coupure : on relance l'écoute
+        continue;
+      }
+      const addressed = st.addressNext || /narrat|ma[iî]tre du jeu/i.test(heard);
+      st.addressNext = false;
+      if (!addressed) {
+        st.overheard = [...(st.overheard || []), heard].slice(-12);
+        st.lastOverheard = heard;
+        render();
+        continue;
+      }
+      st.heard = heard;
+      const context = st.overheard?.length ? `[Ce qui s'est dit autour de la table] ${st.overheard.join(" / ")}\n` : "";
+      st.overheard = [];
+      await converse(token, `${context}[Un joueur dit] ${heard}`);
+    }
+    st.looping = false;
+    st.hearing = false;
+    render();
+  }
+
+  function toggleListen() {
+    st.autoListen = !st.autoListen;
+    localStorage.setItem("lg-ecoute", st.autoListen ? "1" : "0");
+    if (st.autoListen && st.screen === "day") listenLoop(st.run);
+    else Narrator.stopListening();
+    render();
+  }
+
   // Pendant le débat : un joueur parle au narrateur IA (appuyer pour parler).
   async function talk() {
+    if (st.autoListen && st.looping) {
+      // Écoute continue déjà active : la prochaine phrase entendue lui est adressée.
+      st.addressNext = true;
+      toast("🎤 Je t'écoute, parle maintenant.");
+      return render();
+    }
     if (st.busy) {
       if (st.busy === "listening") Narrator.stopListening();
       return;
@@ -558,14 +618,28 @@ const Auto = (() => {
   }
 
   function aiTalkView() {
-    const label = { listening: "⏹️ J'ai fini de parler", thinking: "🤔 Le narrateur réfléchit…", speaking: "🗣️ Le narrateur parle…" }[st.busy] || "🎤 Parler au narrateur";
+    const auto = st.autoListen;
+    const status = st.busy === "thinking" ? "🤔 Le narrateur réfléchit…"
+      : st.busy === "speaking" ? "🗣️ Le narrateur parle…"
+      : st.busy === "listening" || st.hearing ? (st.addressNext ? "🔴 Je t'écoute…" : "🔴 Le narrateur écoute")
+      : auto ? "🟡 Écoute en pause" : "⚪ Le narrateur n'écoute pas";
+    const label = auto
+      ? "🎤 Je parle au narrateur"
+      : { listening: "⏹️ J'ai fini de parler", thinking: "🤔 Il réfléchit…", speaking: "🗣️ Il parle…" }[st.busy] || "🎤 Parler au narrateur";
     return card(`
       <h2>🤖 Le narrateur</h2>
+      <p class="listen-status ${st.busy === "listening" || st.hearing ? "on" : ""}">${status}</p>
+      ${st.lastOverheard && auto ? `<p class="muted" style="font-size:.8rem">Entendu : « ${esc(st.lastOverheard)} »</p>` : ""}
       ${st.heard ? `<p class="muted">Vous : « ${esc(st.heard)} »</p>` : ""}
       ${st.reply || st.story ? `<p class="story">« ${esc(st.reply || st.story)} »</p>` : ""}
       <button onclick="Auto.talk()" ${st.busy === "thinking" || st.busy === "speaking" ? "disabled" : ""}>${label}</button>
       <button class="secondary" onclick="Auto.nudge()" ${st.busy ? "disabled" : ""}>🎙️ Relancer le débat</button>
-      <p class="muted" style="font-size:.8rem">Appuie, parle, puis appuie à nouveau. Pose-lui une question sur les règles, accuse quelqu'un, demande-lui son avis…</p>`);
+      <button class="tile ${auto ? "selected" : ""}" style="width:100%;align-items:flex-start;text-align:left;margin-top:10px" onclick="Auto.toggleListen()">
+        <b>🎧 Écoute continue ${auto ? "activée" : "désactivée"}</b>
+        <span class="muted" style="font-weight:400;font-size:.8rem">${auto
+          ? "Il écoute toute la discussion et répond quand on dit « narrateur… » (ou après 🎤)."
+          : "Il n'écoute que quand tu appuies sur 🎤 : appuie, parle, puis appuie à nouveau."}</span>
+      </button>`);
   }
 
   return {
@@ -609,6 +683,7 @@ const Auto = (() => {
     },
     talk,
     nudge,
+    toggleListen,
     mute() {
       Narrator.toggleMute();
       render();
