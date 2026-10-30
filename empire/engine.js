@@ -36,10 +36,11 @@ const EM = (() => {
   function newGame(players, settings) {
     const g = {
       players: shuffle(players).map((p, i) => ({
-        id: p.id, name: p.name, bot: !!p.bot, color: PLAYER_COLORS[i % PLAYER_COLORS.length],
+        id: p.id, name: p.name, bot: !!p.bot, avatar: p.avatar || null, color: PLAYER_COLORS[i % PLAYER_COLORS.length],
         cash: settings.startCash || 1500, pos: 0, jail: 0, jailCards: 0, bankrupt: false,
       })),
-      settings: { mode: settings.mode || "tours", maxRounds: settings.maxRounds || 25 },
+      settings: { mode: settings.mode || "tours", maxRounds: settings.maxRounds || 25, events: !!settings.events },
+      mods: [],
       turn: 0,
       round: 1,
       stage: "roll",
@@ -94,8 +95,48 @@ const EM = (() => {
       if (lvl > 0) base = s.rent * LEVEL_MULT[lvl];
       else base = ownsGroup(g, owner, s.group) ? s.rent * 2 : s.rent;
     }
-    return Math.round(base * inflation(g));
+    return Math.round(base * inflation(g) * modMult(g, "rent", s));
   }
+
+  // ---------- Mode événements ----------
+  // Effets temporaires (g.mods) : { kind: "rent" | "price", groups?, type?, mult, until }.
+  function modMult(g, kind, s) {
+    return (g.mods || []).filter((m) => m.kind === kind && g.round <= m.until &&
+      (!m.groups || (s.type === "prop" && m.groups.includes(s.group))) &&
+      (!m.type || m.type === s.type)).reduce((x, m) => x * m.mult, 1);
+  }
+
+  // Rang d'un joueur selon son patrimoine (pour la progression affichée à l'écran).
+  const RANKS = [[0, "Locataire"], [2000, "Propriétaire"], [3000, "Investisseur"], [4500, "Magnat"], [6500, "Empereur d'IDF"]];
+  function rank(g, p) {
+    const w = netWorth(g, p);
+    let k = 0;
+    RANKS.forEach(([min], i) => w >= min && (k = i));
+    return { level: k, name: RANKS[k][1] };
+  }
+
+  // Prix d'achat actuel d'une case (les événements peuvent le faire varier).
+  const price = (g, i) => Math.round((SPACES[i].price * modMult(g, "price", SPACES[i])) / 10) * 10;
+
+  // Au début de chaque tour de table, une chance sur deux qu'un événement frappe l'Île-de-France.
+  function roundEvent(g) {
+    g.mods = (g.mods || []).filter((m) => g.round <= m.until);
+    if (!g.settings.events || Math.random() > 0.5) return;
+    const e = WORLD_EVENTS[Math.floor(Math.random() * WORLD_EVENTS.length)];
+    const alive = active(g);
+    const until = g.round + (e.rounds || 0) - 1;
+    if (e.mod) g.mods.push({ ...e.mod, until, title: e.title });
+    if (e.payAll) alive.forEach((p) => { const paid = Math.min(p.cash, e.payAll); p.cash -= paid; g.pot += paid; });
+    if (e.giveAll) alive.forEach((p) => (p.cash += e.giveAll));
+    if (e.cashPct) alive.forEach((p) => { const loss = Math.round(p.cash * e.cashPct); p.cash -= loss; g.pot += loss; });
+    if (e.worthPct) alive.forEach((p) => { const due = Math.min(p.cash, Math.round(netWorth(g, p) * e.worthPct)); p.cash -= due; g.pot += due; });
+    if (e.potDouble) g.pot *= 2;
+    g.eventId = (g.eventId || 0) + 1;
+    g.event = { id: g.eventId, title: e.title, text: e.text, good: !!e.good, round: g.round };
+    log(g, `Événement : ${e.title}. ${e.text}`);
+  }
+
+  const activeMods = (g) => (g.mods || []).filter((m) => g.round <= m.until);
 
   function netWorth(g, p) {
     return p.cash + owned(g, p.id).reduce((sum, i) => sum + SPACES[i].price + level(g, i) * (SPACES[i].build || 0), 0);
@@ -237,10 +278,11 @@ const EM = (() => {
 
   function buy(g, p) {
     const s = SPACES[p.pos];
-    if (p.cash < s.price) return;
-    p.cash -= s.price;
+    const cost = price(g, p.pos);
+    if (p.cash < cost) return;
+    p.cash -= cost;
     g.owners[p.pos] = p.id;
-    log(g, `${p.name} achète ${s.name} pour ${s.price} €.`);
+    log(g, `${p.name} achète ${s.name} pour ${cost} €.`);
     g.stage = g.afterBuy;
   }
 
@@ -339,13 +381,18 @@ const EM = (() => {
     g.doubles = 0;
     g.card = null;
     let i = g.turn;
+    let newRound = false;
     do {
       i = (i + 1) % g.players.length;
-      if (i === 0) g.round++;
+      if (i === 0) {
+        g.round++;
+        newRound = true;
+      }
     } while (g.players[i].bankrupt);
     g.turn = i;
     g.stage = "roll";
     if (checkEnd(g)) return;
+    if (newRound) roundEvent(g);
     log(g, `— Au tour de ${g.players[i].name} —`);
   }
 
@@ -555,9 +602,9 @@ const EM = (() => {
       return true;
     }
     if (g.stage === "buy") {
-      const s = SPACES[p.pos];
+      const cost = price(g, p.pos);
       const keep = g.round < 4 ? 50 : 150;
-      act(g, p.id, p.cash - s.price >= keep || (botValue(g, p.id, p.pos) > s.price * 1.5 && p.cash >= s.price) ? "buy" : "auction", {}, now);
+      act(g, p.id, p.cash - cost >= keep || (botValue(g, p.id, p.pos) > cost * 1.5 && p.cash >= cost) ? "buy" : "auction", {}, now);
       return true;
     }
     if (g.stage === "done") {
@@ -583,6 +630,6 @@ const EM = (() => {
 
   return {
     P, current, active, owned, ownsGroup, groupSpaces, level, rent, netWorth, canBuild, tradeValid,
-    newGame, act, tick, botStep, inflation, JAIL_FEE, MAX_ROUNDS,
+    newGame, act, tick, botStep, inflation, price, activeMods, rank, JAIL_FEE, MAX_ROUNDS,
   };
 })();

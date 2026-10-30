@@ -50,6 +50,35 @@ const SPACES = [
   P("Neuilly-sur-Seine", "Neuilly", "gem", 6, 350),
 ];
 
+// Code postal et page Wikipédia (pour la photo affichée quand on s'arrête sur la case).
+const CITY_INFO = {
+  "Sarcelles": ["95200", "Sarcelles"],
+  "Argenteuil": ["95100", "Argenteuil (Val-d'Oise)"],
+  "Herblay-sur-Seine": ["95220", "Herblay-sur-Seine"],
+  "Bondy": ["93140", "Bondy"],
+  "Saint-Denis": ["93200", "Saint-Denis (Seine-Saint-Denis)"],
+  "Montreuil": ["93100", "Montreuil (Seine-Saint-Denis)"],
+  "Meaux": ["77100", "Meaux"],
+  "Melun": ["77000", "Melun"],
+  "Chessy": ["77700", "Chessy (Seine-et-Marne)"],
+  "Évry-Courcouronnes": ["91000", "Évry-Courcouronnes"],
+  "Massy": ["91300", "Massy (Essonne)"],
+  "Orsay": ["91400", "Orsay"],
+  "L'Haÿ-les-Roses": ["94240", "L'Haÿ-les-Roses"],
+  "Cachan": ["94230", "Cachan"],
+  "Vincennes": ["94300", "Vincennes"],
+  "Poissy": ["78300", "Poissy"],
+  "Saint-Germain-en-Laye": ["78100", "Saint-Germain-en-Laye"],
+  "Versailles": ["78000", "Versailles"],
+  "Clamart": ["92140", "Clamart"],
+  "Issy-les-Moulineaux": ["92130", "Issy-les-Moulineaux"],
+  "Neuilly-sur-Seine": ["92200", "Neuilly-sur-Seine"],
+  "Gare du Nord": ["75010", "Gare de Paris-Nord"],
+  "Gare Montparnasse": ["75015", "Gare de Paris-Montparnasse"],
+  "Châtelet-Les Halles": ["75001", "Gare de Châtelet - Les Halles"],
+  "Gare Saint-Lazare": ["75008", "Gare de Paris-Saint-Lazare"],
+};
+
 const JAIL = 8;
 const START_BONUS = 200;
 const JAIL_FEE = 50;
@@ -102,5 +131,28 @@ const CARDS = [
   { text: "Ta tante te glisse un billet en douce : reçois 40 €.", cash: 40 },
   { text: "Tu gagnes au loto du bar-tabac : reçois 50 €.", cash: 50 },
 ];
+
+// Mode événements : au début d'un tour de table, l'Île-de-France est secouée.
+// mod : effet temporaire sur les loyers ou les prix (rounds = durée en tours).
+const WORLD_EVENTS = [
+  { title: "Manif géante", text: "Tout Paris est bloqué : les loyers baissent de 30 % pendant 2 tours.", mod: { kind: "rent", mult: 0.7 }, rounds: 2 },
+  { title: "Émeutes dans le 93", text: "Les loyers de Seine-Saint-Denis sont divisés par deux pendant 3 tours.", mod: { kind: "rent", groups: [1], mult: 0.5 }, rounds: 3 },
+  { title: "Flambée du prix de l'essence", text: "Chaque joueur paye 50 € à la cagnotte.", payAll: 50 },
+  { title: "Tweet de Donald Trump", text: "Les marchés paniquent : chaque joueur perd 10 % de son argent.", cashPct: 0.1 },
+  { title: "Baisse des aides aux alternants", text: "Chaque joueur paye 80 € à la cagnotte.", payAll: 80 },
+  { title: "Les JO reviennent à Paris", text: "Les loyers des gares doublent pendant 3 tours.", mod: { kind: "rent", type: "rer", mult: 2 }, rounds: 3, good: true },
+  { title: "Bulle immobilière", text: "Les villes à vendre coûtent 30 % de plus pendant 3 tours.", mod: { kind: "price", mult: 1.3 }, rounds: 3 },
+  { title: "Krach immobilier", text: "Les villes à vendre sont à -30 % pendant 2 tours : c'est le moment d'acheter !", mod: { kind: "price", mult: 0.7 }, rounds: 2, good: true },
+  { title: "Grève générale à la RATP", text: "Les gares ne rapportent plus rien pendant 2 tours.", mod: { kind: "rent", type: "rer", mult: 0 }, rounds: 2 },
+  { title: "Anniversaire de Disneyland", text: "Les loyers de Seine-et-Marne augmentent de 50 % pendant 3 tours.", mod: { kind: "rent", groups: [2], mult: 1.5 }, rounds: 3, good: true },
+  { title: "Gentrification de l'Ouest", text: "Loyers des Hauts-de-Seine et des Yvelines +40 % pendant 3 tours.", mod: { kind: "rent", groups: [5, 6], mult: 1.4 }, rounds: 3, good: true },
+  { title: "Prime de Noël", text: "Chaque joueur reçoit 100 €.", giveAll: 100, good: true },
+  { title: "Canicule", text: "Tout le monde file en terrasse : la cagnotte double !", potDouble: true, good: true },
+  { title: "Contrôle fiscal général", text: "Chaque joueur paye 5 % de son patrimoine.", worthPct: 0.05 },
+];
+
+// Qui t'envoie en prison, et qui t'en sort (affichage seulement).
+const JAILERS = ["Bassem", "Netanyahou"];
+const LIBERATOR = "Lassalle";
 
 const PLAYER_COLORS = ["#f87171", "#60a5fa", "#4ade80", "#facc15", "#c084fc", "#fb923c"];

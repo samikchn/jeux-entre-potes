@@ -1,22 +1,29 @@
 // Interface d'Empire IDF (en ligne : l'hôte fait tourner la partie et les robots).
+// Tout tient sur un écran : ordinateur = 3 colonnes ; téléphone = plateau + barre d'onglets.
 
 const { esc, toast } = Common;
+
+// Personnages (avatars dessinés DiceBear « Adventurer », licence CC BY 4.0).
+const AVATARS = ["Felix", "Aneka", "Jade", "Leo", "Mia", "Max", "Zoe", "Sam", "Nala", "Kai", "Lola", "Tom"];
+const avatarUrl = (seed) => `https://api.dicebear.com/9.x/adventurer/svg?seed=${encodeURIComponent(seed || "Felix")}`;
 
 const S = {
   mode: null, // "host" | "player"
   me: Common.playerId(),
   name: localStorage.getItem("uc-name") || "",
+  avatar: localStorage.getItem("em-avatar") || AVATARS[Math.floor(Math.random() * AVATARS.length)],
   code: "",
   hostId: null,
   hostGone: false,
   game: null,
   lobby: [], // joueurs humains connectés
   bots: [], // robots ajoutés par l'hôte
-  settings: { mode: "tours", maxRounds: 25 },
+  avatars: {}, // personnage choisi par chaque joueur (côté hôte, diffusé)
+  settings: { mode: "tours", maxRounds: 25, events: true },
+  sheet: null, // fenêtre ouverte : "space" | "players" | "props" | "trade" | "log"
   sel: null, // case affichée dans la fiche
-  tab: "villes",
   trade: { to: null, give: [], get: [], giveCash: 0, getCash: 0 },
-  clockOffset: 0, // horloge de l'hôte - horloge locale (compte à rebours des enchères)
+  clockOffset: 0,
   status: "",
   error: "",
 };
@@ -24,48 +31,49 @@ const S = {
 let room = null;
 const BOT_NAMES = ["Robot Momo", "Robot Lina", "Robot Kev", "Robot Inès", "Robot Yanis"];
 
-// Icônes vectorielles (Lucide) : identiques sur tous les téléphones, contrairement aux emojis.
 const ic = (name, cls = "") => `<i data-lucide="${name}" class="ic ${cls}"></i>`;
-const SPACE_ICON = { start: "flag", jail: "lock", pause: "coffee", control: "siren", event: "sparkles", tax: "landmark", rer: "train-front" };
+const SPACE_ICON = { start: "flag", jail: "lock", pause: "coffee", control: "siren", event: "sparkles", tax: "landmark" };
 const LEVEL_ICON = ["", "house", "building", "building-2"];
+const card = (html, cls = "") => `<div class="card ${cls}">${html}</div>`;
+const isHost = () => S.mode === "host";
+const me = () => S.game && EM.P(S.game, S.me);
+const money = (n) => `${Math.round(n).toLocaleString("fr-FR")} €`;
+const plain = (t) => String(t).replace(/­/g, "");
+const spaceColor = (s) => (s.type === "prop" ? GROUPS[s.group].color : s.type === "rer" ? "#94a3b8" : "#e5e7eb");
+const avatarImg = (p, cls = "av") => `<img class="${cls}" style="--pc:${p.color || "#555"}" src="${avatarUrl(p.avatar)}" alt="">`;
 
 // ---------- Rendu ----------
 
 function render() {
   const g = S.game;
-  const key = [S.mode, !!g, g?.stage, g?.turn].join("|");
+  document.body.classList.toggle("ingame", !!g);
+  const key = [S.mode, !!g, g?.stage, g?.turn, S.sheet].join("|");
   Common.render(document.getElementById("app"), view(), key);
   window.lucide?.createIcons();
   if (g) Anim.afterRender();
 }
 
-const card = (html, cls = "") => `<div class="card ${cls}">${html}</div>`;
-const isHost = () => S.mode === "host";
-const me = () => S.game && EM.P(S.game, S.me);
-const money = (n) => `${Math.round(n).toLocaleString("fr-FR")} €`;
-const leaveButton = () => `<button class="ghost btn-ic" onclick="A.leave()">${ic("log-out")} Quitter</button>`;
-const spaceColor = (s) => (s.type === "prop" ? GROUPS[s.group].color : s.type === "rer" ? "#475569" : "#e5e7eb");
-
 function view() {
-  if (!S.mode) return homeView();
-  const warn = S.hostGone ? `<div class="alert">L'hôte s'est déconnecté. La partie reprendra dès qu'il revient.</div>` : "";
+  if (!S.mode) return page(homeView());
   if (S.mode === "player" && !S.hostId) {
-    return card(`<p class="center">Connexion au salon <b>${esc(S.code)}</b>…</p>${S.status ? `<p class="muted center">${esc(S.status)}</p>` : ""}`) + leaveButton();
+    return page(card(`<p class="center">Connexion au salon <b>${esc(S.code)}</b>…</p>${S.status ? `<p class="muted center">${esc(S.status)}</p>` : ""}`) + leaveButton());
   }
-  if (!S.game) return warn + lobbyView();
-  return warn + gameView();
+  const warn = S.hostGone ? `<div class="alert">L'hôte s'est déconnecté. La partie reprendra dès qu'il revient.</div>` : "";
+  if (!S.game) return page(warn + lobbyView());
+  return gameView(warn);
 }
+
+const page = (html) => `<div class="em-page"><div class="em-title"><span class="logo">E</span>Empire IDF</div>${html}</div>`;
+const leaveButton = () => `<button class="ghost btn-ic" onclick="A.leave()">${ic("log-out")} Quitter</button>`;
 
 function homeView() {
   const joinCode = new URLSearchParams(location.search).get("salon") || "";
   const saved = JSON.parse(localStorage.getItem("em-host") || "null");
   return `
     ${card(`
-      <div class="mode"><span class="emoji" style="color:#facc15">${ic("building-2")}</span>
-        <div><h2>Deviens le roi de l'Île-de-France</h2><p class="muted">Achète les villes, complète les départements, construis des tours et ruine tes potes.</p></div>
-      </div>
+      <p class="muted" style="margin-top:0">Achète les villes d'Île-de-France, complète les départements, construis des tours et ruine tes potes.</p>
       ${Common.onlineConfigured() ? `
-        <input id="name" placeholder="Ton prénom" maxlength="16" value="${esc(S.name)}" style="margin-top:14px">
+        <input id="name" placeholder="Ton prénom" maxlength="16" value="${esc(S.name)}">
         ${joinCode ? "" : `<button onclick="A.createRoom()">Créer un salon</button>`}
         ${saved && !joinCode ? `<button class="secondary" onclick="A.createRoom(true)">Reprendre mon salon ${esc(saved.code)}</button>` : ""}
         <div class="row">
@@ -79,15 +87,17 @@ function homeView() {
       <details id="rules">
         <summary><b>Les règles</b></summary>
         <p class="muted">Lance les dés et fais le tour du plateau. Achète les villes où tu t'arrêtes, ou mets-les aux enchères. Les autres te payent un loyer quand ils tombent chez toi.</p>
-        <p class="muted">Possède tout un département pour doubler les loyers et construire : Résidence, Immeuble, puis Tour. Les 4 grandes gares parisiennes rapportent plus si tu en as plusieurs.</p>
-        <p class="muted">Cases spéciales : Événement (cartes surprises), Taxe foncière (va dans la cagnotte), Pause terrasse (rafle la cagnotte), Garde à vue (direction la prison de Fleury). En prison, tu sors avec un double, en payant ${EM.JAIL_FEE} € ou avec une carte « Libéré sous caution ».</p>
-        <p class="muted">Le Grand Paris s'embourgeoise : tous les 10 tours, les loyers augmentent de 20 %. Échanges de villes et d'argent à tout moment. Fin au nombre de tours choisi (le plus gros patrimoine gagne) ou à la faillite (au plus tard après ${EM.MAX_ROUNDS} tours).</p>
+        <p class="muted">Possède tout un département pour doubler les loyers et construire : Résidence, Immeuble, puis Tour. Les 4 grandes gares rapportent plus si tu en as plusieurs.</p>
+        <p class="muted">Événement : cartes surprises. Taxe foncière : va dans la cagnotte. Pause terrasse : rafle la cagnotte. Garde à vue : direction la prison de Fleury. En prison, tu sors avec un double, en payant ${EM.JAIL_FEE} € ou avec une carte « Libéré sous caution ».</p>
+        <p class="muted">Mode événements : à chaque tour de table, l'Île-de-France peut être secouée (manif, émeutes, essence, tweet de Trump…), ce qui fait varier les loyers, les prix et ton argent.</p>
+        <p class="muted">Tous les 10 tours, les loyers augmentent de 20 %. Fin au nombre de tours choisi (le plus gros patrimoine gagne) ou à la faillite (au plus tard après ${EM.MAX_ROUNDS} tours).</p>
+        <p class="muted" style="font-size:.75rem">Personnages : DiceBear « Adventurer » (Lisa Wischofsky, CC BY 4.0). Photos : Wikipédia / Wikimedia Commons.</p>
       </details>
     `)}
     <p class="center"><a href="../" class="muted">← Tous les jeux</a></p>`;
 }
 
-const allPlayers = () => [...S.lobby, ...S.bots];
+const allPlayers = () => [...S.lobby, ...S.bots].map((p) => ({ ...p, avatar: S.avatars[p.id] || p.avatar }));
 
 function lobbyView() {
   const players = allPlayers();
@@ -97,25 +107,34 @@ function lobbyView() {
   return `
     ${card(`
       <p class="muted center" style="margin:0">Code du salon</p>
-      <div class="code">${esc(S.code)}</div>
+      <div class="code" style="color:var(--gold);background:none;-webkit-text-fill-color:currentColor">${esc(S.code)}</div>
       <button class="secondary btn-ic" onclick="A.share()">${ic("share-2")} Inviter des joueurs</button>
     `)}
     ${card(`
-      <h2 class="btn-ic" style="justify-content:flex-start">${ic("users")} Joueurs (${players.length}/6)</h2>
-      <ul class="em-list">${players.map((p, i) => `
-        <li><span class="em-chip" style="--pc:${PLAYER_COLORS[i % 6]};padding:0;border:0;background:none"><span class="av">${esc(p.name[0] || "?")}</span></span>
-        <span class="tx"><b>${esc(p.name)}${p.id === S.me ? " (toi)" : ""}</b><small>${p.bot ? "Robot" : p.id === S.hostId ? "Hôte" : "Joueur"}</small></span>
-        ${p.bot && isHost() ? `<button class="icon ghost" onclick="A.removeBot('${p.id}')" aria-label="Retirer">${ic("x")}</button>` : p.bot ? ic("bot") : ""}</li>`).join("")}
-      </ul>
+      <div class="em-h">${ic("users")} Choisis ton personnage</div>
+      <div class="em-avatars">${AVATARS.map((a) => `
+        <button class="${S.avatar === a ? "on" : ""}" onclick="A.pickAvatar('${a}')"><img src="${avatarUrl(a)}" alt="${a}"></button>`).join("")}</div>
+    `)}
+    ${card(`
+      <div class="em-h">${ic("users")} Joueurs (${players.length}/6)</div>
+      ${players.map((p, i) => `
+        <div class="em-pl" style="--pc:${PLAYER_COLORS[i % 6]};margin-bottom:6px">
+          ${avatarImg({ ...p, color: PLAYER_COLORS[i % 6] })}
+          <span class="tx"><b>${esc(p.name)}${p.id === S.me ? " (toi)" : ""}</b><small>${p.bot ? "Robot" : p.id === S.hostId ? "Hôte" : "Joueur"}</small></span>
+          ${p.bot && isHost() ? `<button class="icon ghost" onclick="A.removeBot('${p.id}')" aria-label="Retirer">${ic("x")}</button>` : ""}
+        </div>`).join("")}
       ${isHost() && players.length < 6 ? `<button class="secondary btn-ic" onclick="A.addBot()">${ic("bot")} Ajouter un robot</button>` : ""}
     `)}
     ${card(isHost() ? `
-      <h2>Fin de partie</h2>
+      <div class="em-h">Réglages</div>
       <div class="row" style="flex-wrap:wrap">
         ${opt("tours", 15, "15 tours")}${opt("tours", 25, "25 tours")}${opt("tours", 40, "40 tours")}${opt("faillite", 0, "Faillite")}
       </div>
-      <p class="muted">${s.mode === "faillite" ? `Le dernier joueur non ruiné gagne (au plus tard après ${EM.MAX_ROUNDS} tours, le plus riche).` : `Après ${s.maxRounds} tours de table, le plus gros patrimoine gagne.`}</p>
-    ` : `<p class="muted">${s.mode === "faillite" ? "Jusqu'à la faillite" : `${s.maxRounds} tours`}</p>`)}
+      <p class="muted" style="font-size:.8rem">${s.mode === "faillite" ? `Le dernier joueur non ruiné gagne (au plus tard après ${EM.MAX_ROUNDS} tours).` : `Après ${s.maxRounds} tours de table, le plus gros patrimoine gagne.`}</p>
+      <div class="em-toggle ${s.events ? "on" : ""}" onclick="A.toggleEvents()">
+        <span class="sw2"></span><span><b>Mode événements</b><br><small class="muted">Manif, émeutes, prix de l'essence, tweet de Trump… qui font varier loyers, prix et argent.</small></span>
+      </div>
+    ` : `<p class="muted">${s.mode === "faillite" ? "Jusqu'à la faillite" : `${s.maxRounds} tours`} · mode événements ${s.events ? "activé" : "désactivé"}</p>`)}
     ${isHost()
       ? `<button class="btn-ic" onclick="A.start()" ${players.length >= 2 ? "" : "disabled"}>${ic("dices")} Lancer la partie</button>
          ${players.length < 2 ? `<p class="muted center">Il faut au moins 2 joueurs (ajoute un robot !).</p>` : ""}`
@@ -125,38 +144,40 @@ function lobbyView() {
 
 // ---------- Plateau ----------
 
-// Position de la case i sur la grille 9 × 9 (départ en bas à droite).
+// Ligne / colonne de la case i (grille 9 × 9, départ en bas à droite).
 function cellPos(i) {
   if (i <= 8) return [9, 9 - i];
   if (i <= 16) return [9 - (i - 8), 1];
   if (i <= 24) return [1, 1 + (i - 16)];
   return [1 + (i - 24), 9];
 }
-
-// Taille du nom selon le mot le plus long, pour qu'il tienne dans la case sans être coupé.
-function labelSize(label) {
-  const longest = Math.max(...label.split(/[\s­-]/).map((w) => w.length));
-  return longest <= 6 ? "" : longest <= 8 ? "s" : "xs";
-}
+// Côté du plateau : la bande de couleur regarde le centre, le propriétaire est sur le bord extérieur.
+const side = (i) => (i < 8 ? "s-b" : i < 16 ? "s-l" : i < 24 ? "s-t" : "s-r");
 
 function cellView(s, i) {
   const g = S.game;
   const [row, col] = cellPos(i);
   const owner = g.owners[i] !== undefined ? EM.P(g, g.owners[i]) : null;
   const lvl = EM.level(g, i);
-  const corner = ["start", "jail", "pause", "control"].includes(s.type);
-  const bought = Anim.justBought(i);
-  const titled = s.type === "prop" || s.type === "rer";
-  return `
-    <button class="em-cell ${s.type} ${corner ? "corner" : ""} ${S.sel === i ? "sel" : ""} ${bought ? "bought" : ""}"
-      style="grid-row:${row};grid-column:${col};${owner ? `--oc:${owner.color}` : ""}" onclick="A.select(${i})">
-      ${titled ? `<span class="band" style="background:${spaceColor(s)}">${ic(s.icon)}</span>` : ""}
-      <span class="body">
-        ${!titled ? `<span class="big">${ic(SPACE_ICON[s.type])}</span>` : ""}
-        <span class="nm ${labelSize(s.short || s.name)}">${esc(s.short || s.name)}</span>
-        ${lvl ? `<span class="lv">${ic(LEVEL_ICON[lvl])}</span>` : s.price && !owner ? `<span class="pr">${s.price} €</span>` : ""}
-      </span>
-      ${owner ? `<span class="own" style="background:${owner.color}"></span>` : ""}
+  const label = plain(s.short || s.name);
+  const pos = `grid-row:${row};grid-column:${col}`;
+  const cls = `${S.sel === i ? "sel" : ""} ${Anim.justBought(i) ? "bought" : ""}`;
+  if (["start", "jail", "pause", "control"].includes(s.type)) {
+    return `<button class="cell corner ${s.type} ${cls}" style="${pos}" onclick="A.select(${i})">
+      <span class="big">${ic(SPACE_ICON[s.type])}</span><span class="ct"><span class="nm" style="--n:${label.length}">${esc(label)}</span></span></button>`;
+  }
+  if (s.type === "event" || s.type === "tax") {
+    return `<button class="cell special ${s.type} ${side(i)} ${cls}" style="${pos}" onclick="A.select(${i})">
+      <span class="ct"><span class="big">${ic(SPACE_ICON[s.type])}</span><span class="nm" style="--n:${label.length}">${esc(label)}</span></span></button>`;
+  }
+  const tint = owner ? `--cbg:color-mix(in srgb, ${owner.color} 16%, #1b1f27);--oc:${owner.color}` : "";
+  const info = lvl
+    ? `<span class="lv">${Array.from({ length: lvl }, () => ic(LEVEL_ICON[1])).join("")}</span>`
+    : owner ? `<span class="pr" style="color:${owner.color}">${EM.rent(g, i)} €</span>` : `<span class="pr">${EM.price(g, i)} €</span>`;
+  return `<button class="cell ${side(i)} ${cls}" style="${pos};${tint}" onclick="A.select(${i})">
+      <span class="strip" style="background:${spaceColor(s)}">${ic(s.icon)}</span>
+      <span class="ct"><span class="nm" style="--n:${Math.max(label.length, 4)}">${esc(label)}</span>${info}</span>
+      ${owner ? `<span class="own"></span>` : ""}
     </button>`;
 }
 
@@ -165,168 +186,105 @@ function boardView() {
   return `
     <div class="em-board" id="board">
       ${SPACES.map(cellView).join("")}
-      <div class="em-center">
-        <div class="em-logo">EMPIRE IDF</div>
-        ${centerView()}
-      </div>
+      <div class="em-center">${centerView()}</div>
       <div class="em-pawns">${g.players.filter((p) => !p.bankrupt).map((p) => `
-        <div class="pawn ${EM.current(g).id === p.id ? "turn" : ""}" id="pawn-${p.id}" style="--pc:${p.color};${Anim.pawnStyle(p)}">${esc(p.name[0] || "?")}</div>`).join("")}
+        <div class="pawn ${EM.current(g).id === p.id ? "turn" : ""}" id="pawn-${p.id}" style="--pc:${p.color};${Anim.pawnStyle(p)}">
+          <img src="${avatarUrl(p.avatar)}" alt=""></div>`).join("")}
       </div>
     </div>`;
 }
 
 function diceView() {
-  const faces = Anim.diceFaces();
   const PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
-  return `<div class="em-dice ${Anim.rolling() ? "rolling" : Anim.justLanded() ? "landed" : ""}" id="dice">${faces.map((f) => `
+  return `<div class="em-dice ${Anim.rolling() ? "rolling" : Anim.justLanded() ? "landed" : ""}" id="dice">${Anim.diceFaces().map((f) => `
     <div class="die">${Array.from({ length: 9 }, (_, k) => `<span class="${PIPS[f].includes(k) ? "on" : ""}"></span>`).join("")}</div>`).join("")}</div>`;
 }
 
-// Le centre du plateau montre la situation et LE bouton à toucher.
+// Le centre montre la situation, LE bouton à toucher et les derniers événements.
 function centerView() {
   const g = S.game;
+  const feed = `<div class="em-feed">${g.log.slice(-3).reverse().map((l) => `<div>${esc(l)}</div>`).join("")}</div>`;
   if (g.stage === "end") {
     const w = EM.P(g, g.winner);
-    return `<div class="em-trophy">${ic("crown")}</div><div class="em-status"><b style="color:${w.color}">${esc(w.name)}</b> gagne !</div>`;
+    return `<div class="brand">EMPIRE IDF</div>${avatarImg(w, "av")}<div class="status"><b style="color:${w.color}">${esc(w.name)}</b> gagne la partie !</div>
+      ${isHost() ? `<button onclick="A.replay()">Rejouer</button>` : `<div class="em-mini">L'hôte peut relancer une partie.</div>`}`;
   }
   const p = me();
   const cur = EM.current(g);
   const mine = p && cur.id === p.id;
   const s = SPACES[cur.pos];
   const extras = [
-    g.pot ? `${ic("coffee")} Cagnotte ${money(g.pot)}` : "",
-    EM.inflation(g) > 1 ? `${ic("trending-up")} Loyers +${Math.round((EM.inflation(g) - 1) * 100)} %` : "",
-  ].filter(Boolean).join(" · ");
-  const foot = extras ? `<div class="em-mini">${extras}</div>` : "";
+    g.pot ? `<span>${ic("coffee")} Cagnotte ${money(g.pot)}</span>` : "",
+    EM.inflation(g) > 1 ? `<span>${ic("trending-up")} Loyers +${Math.round((EM.inflation(g) - 1) * 100)} %</span>` : "",
+    EM.activeMods(g).length ? `<span style="color:var(--gold)">${ic("sparkles")} ${EM.activeMods(g).length} événement(s) en cours</span>` : "",
+  ].join("");
+  const mini = extras ? `<div class="em-mini">${extras}</div>` : "";
 
   if (g.stage === "auction") {
     const a = g.auction;
     const left = Math.max(0, (a.endsAt - (Date.now() + S.clockOffset)) / 1000);
     const leader = a.bidder ? EM.P(g, a.bidder) : null;
-    const bidBtn = (inc) => p && !p.bankrupt && p.cash >= a.bid + inc
-      ? `<button class="secondary" onclick="A.bid(${a.bid + inc})">+${inc}</button>` : "";
+    const bidBtn = (inc) => p && !p.bankrupt && p.cash >= a.bid + inc ? `<button class="secondary" onclick="A.bid(${a.bid + inc})">+${inc}</button>` : "";
     return `
-      <div class="em-status btn-ic">${ic("gavel")} Enchères : <b>${esc(SPACES[a.space].name)}</b></div>
+      <div class="status btn-ic">${ic("gavel")} Enchères : <b>${esc(SPACES[a.space].name)}</b></div>
       <div class="em-bid">${money(a.bid)}</div>
-      <div class="em-mini">${leader ? `Meilleure offre : <b style="color:${leader.color}">${esc(leader.name)}</b>` : "Aucune offre"} · prix ${money(SPACES[a.space].price)}</div>
+      <div class="em-mini">${leader ? `Meilleure offre : <b style="color:${leader.color}">${esc(leader.name)}</b>` : "Aucune offre"} · prix ${money(EM.price(g, a.space))}</div>
       <div class="em-timer"><div style="width:${Math.min(100, (left / 8) * 100)}%"></div></div>
       <div class="row">${bidBtn(10)}${bidBtn(50)}${bidBtn(100)}</div>`;
   }
 
   const dice = diceView();
-  if (Anim.rolling()) return `${dice}<div class="em-status">${esc(cur.name)} lance les dés…</div>`;
-  if (!mine) {
-    const what = g.stage === "debt" ? "cherche de l'argent pour payer" : g.stage === "buy" ? `hésite à acheter ${esc(s.name)}` : "joue";
-    return `${dice}<div class="em-status"><b style="color:${cur.color}">${esc(cur.name)}</b> ${what}…</div>${foot}`;
-  }
-  if (g.stage === "debt") {
-    return `${dice}
-      <div class="em-status">Tu dois payer <b>${money(g.debt.amount)}</b>, tu as ${money(p.cash)}.</div>
-      <div class="em-mini">Revends des constructions ou des villes dans l'onglet « Mes villes ».</div>
-      <button onclick="A.do('payDebt')" ${p.cash >= g.debt.amount ? "" : "disabled"}>Payer</button>
-      <button class="secondary" onclick="A.bankrupt()">Faillite</button>`;
-  }
-  if (g.stage === "buy") {
+  let body;
+  if (Anim.rolling()) body = `<div class="status">${esc(cur.name)} lance les dés…</div>`;
+  else if (!mine) {
+    const what = g.stage === "debt" ? "cherche de l'argent" : g.stage === "buy" ? `hésite à acheter ${esc(plain(s.name))}` : "joue";
+    body = `<div class="status"><b style="color:${cur.color}">${esc(cur.name)}</b> ${what}…</div>`;
+  } else if (g.stage === "debt") {
+    body = `<div class="status">Tu dois payer <b>${money(g.debt.amount)}</b> (tu as ${money(p.cash)}).</div>
+      <div class="em-mini">Revends constructions ou propriétés dans « Mes villes ».</div>
+      <div class="row"><button onclick="A.do('payDebt')" ${p.cash >= g.debt.amount ? "" : "disabled"}>Payer</button>
+      <button class="danger" onclick="A.bankrupt()">Faillite</button></div>`;
+  } else if (g.stage === "buy") {
+    const cost = EM.price(g, cur.pos);
     return `
-      <div class="em-deed"><div class="hd" style="background:${spaceColor(s)}">${esc(s.name)}</div>
-        <div class="bd">${s.type === "prop" ? esc(GROUPS[s.group].name) : "Gare parisienne"}<br><b>${money(s.price)}</b></div></div>
-      <div class="row">
-        <button onclick="A.do('buy')" ${p.cash >= s.price ? "" : "disabled"}>Acheter</button>
-        <button class="secondary" onclick="A.do('auction')">Enchères</button>
-      </div>`;
-  }
-  if (g.stage === "roll") {
-    return `${dice}
-      ${p.jail ? `<div class="em-status btn-ic">${ic("lock")} En prison (essai ${p.jail}/3) : fais un double !</div>` : `<div class="em-status">À toi de jouer !</div>`}
+      <div class="em-deed"><div class="hd" style="background:${spaceColor(s)}">${esc(plain(s.name))}</div>
+        <div class="bd">${s.type === "prop" ? esc(GROUPS[s.group].name) : "Gare parisienne"}<br><b>${money(cost)}</b>${cost !== s.price ? ` <s>${s.price} €</s>` : ""}</div></div>
+      <div class="row"><button onclick="A.do('buy')" ${p.cash >= cost ? "" : "disabled"}>Acheter</button>
+        <button class="secondary" onclick="A.do('auction')">Enchères</button></div>
+      ${feed}`;
+  } else if (g.stage === "roll") {
+    body = `${p.jail ? `<div class="status btn-ic">${ic("lock")} En prison (essai ${p.jail}/3)</div>` : ""}
       <button class="btn-ic" onclick="A.do('roll')">${ic("dices")} Lancer les dés</button>
       ${p.jail && (p.cash >= EM.JAIL_FEE || p.jailCards) ? `<div class="row">
         ${p.cash >= EM.JAIL_FEE ? `<button class="secondary" onclick="A.do('jailPay')">Payer ${EM.JAIL_FEE} €</button>` : ""}
-        ${p.jailCards ? `<button class="secondary" onclick="A.do('jailCard')">Caution</button>` : ""}</div>` : foot}`;
+        ${p.jailCards ? `<button class="secondary" onclick="A.do('jailCard')">Caution</button>` : ""}</div>` : ""}`;
+  } else {
+    body = `<button onclick="A.do('endTurn')">Finir mon tour</button><div class="em-mini">Construis ou échange avant de finir.</div>`;
   }
-  return `${dice}<div class="em-status">${esc(s.name)}</div>
-    <button class="btn-ic" onclick="A.do('endTurn')">Finir mon tour</button>
-    <div class="em-mini">Construis ou échange avant de finir.</div>`;
+  return `${dice}${body}${mini}${feed}`;
 }
 
-// ---------- Partie ----------
+// ---------- Panneaux ----------
 
-function playersBar() {
+function playersPanel() {
   const g = S.game;
   const cur = EM.current(g);
-  return `<div class="em-players">${g.players.map((p) => `
-    <div class="em-chip ${p.id === cur.id ? "turn" : ""} ${p.bankrupt ? "out" : ""}" style="--pc:${p.color}" data-chip="${p.id}">
-      <span class="av">${esc(p.name[0] || "?")}</span>
-      <span><span class="nm">${esc(p.name)}${p.id === S.me ? " (toi)" : ""}</span><br><span class="cs">${money(p.cash)}</span></span>
-      ${p.jail ? `<span class="badge">${ic("lock")}</span>` : p.bot ? `<span class="badge" style="color:#93c5fd">${ic("bot")}</span>` : ""}
-    </div>`).join("")}</div>`;
+  return g.players.map((p) => `
+    <div class="em-pl ${p.id === cur.id ? "turn" : ""} ${p.bankrupt ? "out" : ""}" style="--pc:${p.color}" data-chip="${p.id}">
+      ${avatarImg(p)}
+      <span class="tx"><b>${esc(p.name)}${p.id === S.me ? " (toi)" : ""}</b>
+        <small>${p.bankrupt ? "Faillite" : `${EM.rank(g, p).name}${p.jail ? " · en prison" : ""}${p.bot ? " · robot" : ""}`}</small></span>
+      <span class="cash">${money(p.cash)}</span>
+    </div>`).join("");
 }
 
-function gameView() {
+function eventsPanel() {
   const g = S.game;
-  const roundTxt = g.stage === "end" ? "Partie terminée" : g.settings.mode === "tours" ? `Tour ${g.round} / ${g.settings.maxRounds}` : `Tour ${g.round}`;
-  const tabs = [["villes", "building-2", "Mes villes"], ["joueurs", "users", "Joueurs"], ["echanges", "arrow-left-right", "Échanges"], ["journal", "scroll-text", "Journal"]];
-  const body = { villes: myPropsView, joueurs: playersView, echanges: tradeView, journal: logView }[S.tab]();
-  return `
-    <div class="phase-wrap"><span class="phase">${roundTxt}</span></div>
-    ${playersBar()}
-    ${tradeLiveView()}
-    ${boardView()}
-    ${g.stage === "end" ? endView() : ""}
-    <div class="em-tabs">${tabs.map(([id, icon, label]) => `
-      <button class="${S.tab === id ? "on" : ""}" onclick="A.tab('${id}')">${ic(icon)}<br>${label}</button>`).join("")}</div>
-    ${card(body)}
-    ${leaveButton()}
-    ${S.sel !== null ? spaceSheet(S.sel) : ""}`;
-}
-
-function spaceSheet(i) {
-  const g = S.game;
-  const s = SPACES[i];
-  const owner = g.owners[i] !== undefined ? EM.P(g, g.owners[i]) : null;
-  let rows = "";
-  if (s.type === "prop") {
-    rows = `<tr><td>Loyer</td><td>${s.rent} €</td></tr><tr><td>Département complet</td><td>${s.rent * 2} €</td></tr>
-      ${LEVELS.slice(1).map((l, k) => `<tr><td>${ic(LEVEL_ICON[k + 1])} ${l}</td><td>${s.rent * LEVEL_MULT[k + 1]} €</td></tr>`).join("")}
-      <tr><td>Prix d'une construction</td><td>${s.build} €</td></tr>`;
-  } else if (s.type === "rer") {
-    rows = [1, 2, 3, 4].map((n) => `<tr><td>${n} gare${n > 1 ? "s" : ""} possédée${n > 1 ? "s" : ""}</td><td>${25 * 2 ** (n - 1)} €</td></tr>`).join("");
-  } else {
-    const txt = {
-      start: `Touche ${START_BONUS} € à chaque passage.`,
-      jail: `Prison de Fleury : sors avec un double, en payant ${EM.JAIL_FEE} € ou avec une carte « Libéré sous caution ». Si tu ne fais que passer, rien ne se passe.`,
-      pause: "Celui qui s'arrête ici rafle la cagnotte.",
-      control: "Garde à vue : direction la prison !",
-      event: "Tire une carte Événement : bonne ou mauvaise surprise.",
-      tax: `Paye ${s.amount} € à la cagnotte.`,
-    }[s.type];
-    rows = `<tr><td colspan="2" style="text-align:left;font-weight:400">${txt}</td></tr>`;
-  }
-  const inflation = EM.inflation(g) > 1 && (s.type === "prop" || s.type === "rer") ? `<p class="muted">Loyers actuels +${Math.round((EM.inflation(g) - 1) * 100)} % (inflation).</p>` : "";
-  return `
-    <div class="em-sheet-bg" onclick="if(event.target===this)A.select(null)">
-      <div class="em-sheet">
-        <div class="deed-hd" style="background:${spaceColor(s)}">
-          <small>${s.type === "prop" ? esc(GROUPS[s.group].name) : s.type === "rer" ? "Gare parisienne" : "Case spéciale"}</small>
-          <h2>${esc(s.name)}</h2>
-          ${s.price ? `<b>${money(s.price)}</b>` : ""}
-        </div>
-        <table>${rows}</table>
-        ${inflation}
-        ${owner ? `<p>Propriétaire : <b style="color:${owner.color}">${esc(owner.name)}</b>${EM.level(g, i) ? ` · ${LEVELS[EM.level(g, i)]}` : ""} · loyer actuel <b>${money(EM.rent(g, i))}</b></p>` : s.price ? `<p class="muted">Libre : à vendre.</p>` : ""}
-        <button class="secondary" onclick="A.select(null)">Fermer</button>
-      </div>
-    </div>`;
-}
-
-function playersView() {
-  const g = S.game;
-  return `<ul class="em-list">${g.players.map((p) => `
-    <li style="${p.bankrupt ? "opacity:.4" : ""}">
-      <span class="sw" style="background:${p.color}"></span>
-      <span class="tx"><b>${esc(p.name)}${p.bot ? " · robot" : ""}${p.jail ? " · en prison" : ""}${p.bankrupt ? " · faillite" : ""}</b>
-        <small>${esc(SPACES[p.pos].name)} · ${EM.owned(g, p.id).length} propriété(s) · patrimoine ${money(EM.netWorth(g, p))}</small></span>
-      <b>${money(p.cash)}</b>
-    </li>`).join("")}</ul>`;
+  const mods = EM.activeMods(g);
+  if (!g.settings.events) return "";
+  return `<div class="em-h">${ic("sparkles")} Événements</div>${mods.length
+    ? mods.map((m) => `<div class="em-event-chip"><b>${esc(m.title)}</b><br>jusqu'au tour ${m.until}</div>`).join("")
+    : `<div class="em-mini" style="justify-content:flex-start">Rien en cours.</div>`}`;
 }
 
 function myPropsView() {
@@ -337,42 +295,39 @@ function myPropsView() {
   const mine = EM.current(g).id === p.id;
   const canAct = (mine && ["roll", "done"].includes(g.stage)) || g.debt?.pid === p.id;
   const canBuildNow = mine && ["roll", "done"].includes(g.stage);
-  if (!props.length) return `<p class="muted">Tu n'as encore aucune propriété. Arrête-toi sur une ville libre pour l'acheter.</p>`;
-  return `
-    <ul class="em-list">${props.map((i) => {
-      const s = SPACES[i];
-      const lvl = EM.level(g, i);
-      const full = s.type === "prop" && EM.ownsGroup(g, p.id, s.group);
-      return `<li>
-        <span class="sw" style="background:${spaceColor(s)}"></span>
-        <span class="tx" onclick="A.select(${i})"><b>${esc(s.name)}</b>
-          <small>${lvl ? LEVELS[lvl] : full ? "Département complet" : s.type === "rer" ? "Gare" : "Terrain"} · loyer ${money(EM.rent(g, i))}</small></span>
-        ${canBuildNow && EM.canBuild(g, p.id, i) && p.cash >= s.build ? `<button class="icon" title="Construire (${s.build} €)" onclick="A.do('build', {space: ${i}})">${ic("hammer")}</button>` : ""}
-        ${canAct && lvl ? `<button class="icon secondary" title="Revendre une construction" onclick="A.do('sellLevel', {space: ${i}})">${ic("house")}</button>` : ""}
-        ${canAct && !lvl ? `<button class="icon secondary" title="Revendre à la banque (${s.price / 2} €)" onclick="A.sellProp(${i})">${ic("wallet")}</button>` : ""}
-      </li>`;
-    }).join("")}</ul>
-    <p class="muted" style="font-size:.78rem">Marteau : construire (département complet, à ton tour). Maison : revendre une construction. Porte-monnaie : revendre à la banque. Le tout à moitié prix.</p>
-    ${p.jailCards ? `<p class="muted">Cartes « Libéré sous caution » : ${p.jailCards}</p>` : ""}`;
+  if (!props.length) return `<p class="muted" style="font-size:.85rem">Aucune propriété pour l'instant.</p>`;
+  return `<ul class="em-list">${props.map((i) => {
+    const s = SPACES[i];
+    const lvl = EM.level(g, i);
+    const full = s.type === "prop" && EM.ownsGroup(g, p.id, s.group);
+    return `<li>
+      <span class="sw" style="background:${spaceColor(s)}"></span>
+      <span class="tx" onclick="A.select(${i})"><b>${esc(plain(s.name))}</b>
+        <small>${lvl ? LEVELS[lvl] : full ? "Département complet" : s.type === "rer" ? "Gare" : "Terrain"} · loyer ${money(EM.rent(g, i))}</small></span>
+      ${canBuildNow && EM.canBuild(g, p.id, i) && p.cash >= s.build ? `<button class="icon" title="Construire (${s.build} €)" onclick="A.do('build', {space: ${i}})">${ic("hammer")}</button>` : ""}
+      ${canAct && lvl ? `<button class="icon secondary" title="Revendre une construction" onclick="A.do('sellLevel', {space: ${i}})">${ic("house")}</button>` : ""}
+      ${canAct && !lvl ? `<button class="icon secondary" title="Revendre à la banque" onclick="A.sellProp(${i})">${ic("wallet")}</button>` : ""}
+    </li>`;
+  }).join("")}</ul>
+  <p class="muted" style="font-size:.72rem">Marteau : construire · maison : revendre une construction · porte-monnaie : revendre à la banque (moitié prix).</p>`;
 }
+
+const logView = () => `<div class="em-log">${S.game.log.slice(-20).reverse().map((l) => `<div>${esc(l)}</div>`).join("")}</div>`;
 
 // ---------- Échanges ----------
 
-// Petite tuile de ville (couleur du département, icône, nom, prix).
 function propTile(i, onclick = "", on = false) {
   const s = SPACES[i];
   return `<button class="em-ptile ${on ? "on" : ""}" ${onclick ? `onclick="${onclick}"` : "disabled"}>
     <span class="bd" style="background:${spaceColor(s)}">${ic(s.icon)}</span>
-    <span class="nm">${esc(s.short || s.name)}</span><span class="pr">${s.price} €</span></button>`;
+    <span class="nm">${esc(plain(s.short || s.name))}</span><span class="pr">${s.price} €</span></button>`;
 }
 
-// Ce que donne un côté de l'échange : tuiles + argent.
 function tradeSideView(o) {
   const parts = o.props.map((i) => propTile(i)).join("");
   return `<div class="em-tiles">${parts}${o.cash ? `<span class="em-cashpill">${ic("wallet")} ${money(o.cash)}</span>` : ""}${!parts && !o.cash ? `<span class="muted">rien</span>` : ""}</div>`;
 }
 
-// Encart visible par tous dès qu'un échange est proposé.
 function tradeLiveView() {
   const g = S.game;
   const t = g.trade;
@@ -381,39 +336,39 @@ function tradeLiveView() {
   const to = EM.P(g, t.to);
   const who = (p) => `<b style="color:${p.color}">${esc(p.id === S.me ? "Toi" : p.name)}</b>`;
   const actions = t.to === S.me
-    ? `<div class="row"><button class="btn-ic" onclick="A.do('respond', {accept: true})">${ic("handshake")} Accepter</button>
-         <button class="secondary" onclick="A.do('respond', {accept: false})">Refuser</button></div>`
+    ? `<div class="row"><button onclick="A.do('respond', {accept: true})">Accepter</button><button class="secondary" onclick="A.do('respond', {accept: false})">Refuser</button></div>`
     : t.from === S.me
       ? `<button class="secondary" onclick="A.do('cancelTrade')">Annuler ma proposition</button>`
-      : `<p class="muted center" style="margin:6px 0 0">En attente de la réponse de ${esc(to.name)}…</p>`;
-  return `
-    <div class="em-trade-live ${t.to === S.me ? "for-me" : ""}">
-      <div class="hd">${ic("arrow-left-right")} Échange en cours : ${who(from)} → ${who(to)}</div>
-      <div class="em-trade-cols">
-        <div><small>${who(from)} donne</small>${tradeSideView(t.give)}</div>
-        <div><small>${who(to)} donne</small>${tradeSideView(t.get)}</div>
-      </div>
-      ${actions}
-    </div>`;
+      : `<div class="em-mini">En attente de ${esc(to.name)}…</div>`;
+  return `<div class="em-trade-live ${t.to === S.me ? "for-me" : ""}">
+    <div class="hd">${ic("arrow-left-right")} ${who(from)} → ${who(to)}</div>
+    <div class="em-trade-cols"><div><small>${who(from)} donne</small>${tradeSideView(t.give)}</div><div><small>${who(to)} donne</small>${tradeSideView(t.get)}</div></div>
+    ${actions}</div>`;
 }
 
 const tradeValue = (props, cash) => props.reduce((s, i) => s + SPACES[i].price, 0) + (cash || 0);
 
-function cashControl(list, max) {
-  const v = Math.min(S.trade[list + "Cash"] || 0, max);
-  return `
-    <div class="em-cash">
-      <div class="row" style="align-items:center">
-        <button class="icon secondary" onclick="A.tradeCash('${list}', -50)">${ic("minus")}</button>
-        <span class="v" id="cash-${list}">${money(v)}</span>
-        <button class="icon secondary" onclick="A.tradeCash('${list}', 50)">${ic("plus")}</button>
-      </div>
-      <input id="range-${list}" type="range" min="0" max="${max}" step="10" value="${v}" oninput="A.tradeCash('${list}', 0, +this.value)">
-      <div class="muted" style="font-size:.75rem;display:flex;justify-content:space-between"><span>0 €</span><span>${money(max)}</span></div>
-    </div>`;
+function tradeSummary() {
+  const d = S.trade;
+  const give = tradeValue(d.give, d.giveCash);
+  const get = tradeValue(d.get, d.getCash);
+  const diff = get - give;
+  return `Tu donnes <b>${money(give)}</b> · tu reçois <b>${money(get)}</b> <span class="${diff >= 0 ? "plus" : "minus"}">(${diff >= 0 ? "+" : "−"}${money(Math.abs(diff))})</span>`;
 }
 
-function tradeView() {
+function cashControl(list, max) {
+  const v = Math.min(S.trade[list + "Cash"] || 0, max);
+  return `<div class="em-cash">
+    <div class="row" style="align-items:center">
+      <button class="icon secondary" onclick="A.tradeCash('${list}', -50)">${ic("minus")}</button>
+      <span class="v" id="cash-${list}">${money(v)}</span>
+      <button class="icon secondary" onclick="A.tradeCash('${list}', 50)">${ic("plus")}</button>
+    </div>
+    <input id="range-${list}" type="range" min="0" max="${max}" step="10" value="${v}" oninput="A.tradeCash('${list}', 0, +this.value)">
+  </div>`;
+}
+
+function tradeComposer() {
   const g = S.game;
   if (g.trade) return tradeLiveView();
   if (!me() || me().bankrupt) return `<p class="muted">Tu ne joues plus dans cette partie.</p>`;
@@ -423,74 +378,150 @@ function tradeView() {
   const tradable = (pid) => EM.owned(g, pid).filter((i) => !(SPACES[i].type === "prop" && EM.groupSpaces(SPACES[i].group).some((j) => EM.level(g, j))));
   const tiles = (ids, list) => ids.length
     ? `<div class="em-tiles">${ids.map((i) => propTile(i, `A.tradeToggle('${list}', ${i})`, d[list].includes(i))).join("")}</div>`
-    : `<p class="muted">Aucune propriété échangeable.</p>`;
+    : `<p class="muted" style="font-size:.8rem">Aucune propriété échangeable.</p>`;
   const partner = d.to && EM.P(g, d.to);
   return `
-    <h3 style="margin-top:0">1. Avec qui ?</h3>
-    <div class="em-players" style="padding-bottom:4px">${others.map((p) => `
-      <button class="em-chip ${d.to === p.id ? "turn" : ""}" style="--pc:${p.color};margin:0;width:auto" onclick="A.tradeWith('${p.id}')">
-        <span class="av">${esc(p.name[0] || "?")}</span><span class="nm">${esc(p.name)}</span></button>`).join("")}</div>
+    <div class="em-h">1. Avec qui ?</div>
+    <div class="em-strip">${others.map((p) => `
+      <button class="em-pl ${d.to === p.id ? "turn" : ""}" style="--pc:${p.color};margin:0;width:auto" onclick="A.tradeWith('${p.id}')">${avatarImg(p)}<span class="tx"><b>${esc(p.name)}</b></span></button>`).join("")}</div>
     ${partner ? `
-      <h3>2. Tu donnes</h3>
-      ${tiles(tradable(S.me), "give")}
-      ${cashControl("give", me().cash)}
-      <h3>3. Tu demandes à ${esc(partner.name)}</h3>
-      ${tiles(tradable(partner.id), "get")}
-      ${cashControl("get", partner.cash)}
+      <div class="em-h">2. Tu donnes</div>${tiles(tradable(S.me), "give")}${cashControl("give", me().cash)}
+      <div class="em-h">3. Tu demandes à ${esc(partner.name)}</div>${tiles(tradable(partner.id), "get")}${cashControl("get", partner.cash)}
       <div class="em-trade-sum" id="trade-sum">${tradeSummary()}</div>
-      <button class="btn-ic" onclick="A.propose()">${ic("handshake")} Proposer l'échange</button>` : `<p class="muted">Choisis un joueur pour composer ton offre.</p>`}`;
+      <button class="btn-ic" onclick="A.propose()">${ic("handshake")} Proposer l'échange</button>` : ""}`;
 }
 
-function tradeSummary() {
-  const d = S.trade;
-  const give = tradeValue(d.give, d.giveCash);
-  const get = tradeValue(d.get, d.getCash);
-  const diff = get - give;
-  return `Tu donnes <b>${money(give)}</b> · tu reçois <b>${money(get)}</b>
-    <span class="${diff >= 0 ? "plus" : "minus"}">(${diff >= 0 ? "+" : "−"}${money(Math.abs(diff))} pour toi)</span>`;
-}
+// ---------- Fenêtres ----------
 
-function logView() {
-  return `<div class="em-log">${S.game.log.slice(-15).reverse().map((l) => `<div>${esc(l)}</div>`).join("")}</div>`;
-}
-
-function endView() {
+function spaceSheet(i) {
   const g = S.game;
-  const ranking = g.players.slice().sort((a, b) => EM.netWorth(g, b) - EM.netWorth(g, a));
-  return card(`
-    <h2>Classement</h2>
-    <ul class="em-list">${ranking.map((p, k) => `<li><b style="width:22px">${k + 1}</b><span class="sw" style="background:${p.color}"></span>
-      <span class="tx"><b>${esc(p.name)}</b></span><b>${p.bankrupt ? "faillite" : money(EM.netWorth(g, p))}</b></li>`).join("")}</ul>
-    ${isHost() ? `<button onclick="A.replay()">Rejouer</button>` : `<p class="muted center">L'hôte peut relancer une partie.</p>`}`);
+  const s = SPACES[i];
+  const owner = g.owners[i] !== undefined ? EM.P(g, g.owners[i]) : null;
+  const info = CITY_INFO[s.name];
+  let rows;
+  if (s.type === "prop") {
+    rows = `<tr><td>Loyer</td><td>${s.rent} €</td></tr><tr><td>Département complet</td><td>${s.rent * 2} €</td></tr>
+      ${LEVELS.slice(1).map((l, k) => `<tr><td>${l}</td><td>${s.rent * LEVEL_MULT[k + 1]} €</td></tr>`).join("")}
+      <tr><td>Prix d'une construction</td><td>${s.build} €</td></tr>`;
+  } else if (s.type === "rer") {
+    rows = [1, 2, 3, 4].map((n) => `<tr><td>${n} gare${n > 1 ? "s" : ""} possédée${n > 1 ? "s" : ""}</td><td>${25 * 2 ** (n - 1)} €</td></tr>`).join("");
+  } else {
+    const txt = {
+      start: `Touche ${START_BONUS} € à chaque passage.`,
+      jail: `Prison de Fleury : sors avec un double, en payant ${EM.JAIL_FEE} € ou avec une carte « Libéré sous caution ». En simple visite, rien ne se passe.`,
+      pause: "Celui qui s'arrête ici rafle la cagnotte.",
+      control: "Garde à vue : direction la prison !",
+      event: "Tire une carte Événement : bonne ou mauvaise surprise.",
+      tax: `Paye ${s.amount} € à la cagnotte.`,
+    }[s.type];
+    rows = `<tr><td colspan="2" style="text-align:left;font-weight:400">${txt}</td></tr>`;
+  }
+  return `
+    <div class="deed-hd" style="background:${spaceColor(s)}">
+      <small>${s.type === "prop" ? esc(GROUPS[s.group].name) : s.type === "rer" ? "Gare parisienne" : "Case spéciale"}${info ? ` · ${info[0]}` : ""}</small>
+      <h2>${esc(plain(s.name))}</h2>${s.price ? `<b>${money(EM.price(g, i))}</b>` : ""}
+    </div>
+    <table>${rows}</table>
+    ${owner ? `<p>Propriétaire : <b style="color:${owner.color}">${esc(owner.name)}</b>${EM.level(g, i) ? ` · ${LEVELS[EM.level(g, i)]}` : ""} · loyer actuel <b>${money(EM.rent(g, i))}</b></p>` : s.price ? `<p class="muted">Libre : à vendre.</p>` : ""}`;
 }
 
-// ---------- Animations ----------
-// Tout est déduit de l'état reçu : dés (rollId), pions (positions), argent, cartes (cardId),
-// achats. Rien ne change les règles : seulement ce qu'on voit, et quand.
-const Anim = (() => {
-  const st = { rollId: null, cardId: null, rollingUntil: 0, landedUntil: 0, faces: [5, 2], shown: {}, cash: {}, owners: null, bought: {}, turnKey: null, mover: null, roller: null };
-  const ROLL_MS = 500;
+function sheetView() {
+  if (!S.sheet) return "";
+  const titles = { players: "Joueurs", props: "Mes villes", trade: "Échanges", log: "Journal" };
+  const body = {
+    space: () => spaceSheet(S.sel),
+    players: () => playersPanel() + eventsPanel(),
+    props: myPropsView,
+    trade: () => (S.game.trade ? tradeLiveView() : tradeComposer()),
+    log: logView,
+  }[S.sheet]();
+  return `<div class="em-sheet-bg" onclick="if(event.target===this)A.closeSheet()"><div class="em-sheet">
+    ${titles[S.sheet] ? `<div class="em-row" style="justify-content:space-between;margin-bottom:8px"><b>${titles[S.sheet]}</b>
+      <button class="icon ghost" onclick="A.closeSheet()">${ic("x")}</button></div>` : ""}
+    ${body}
+    ${S.sheet === "space" ? `<button class="secondary" onclick="A.closeSheet()">Fermer</button>` : ""}
+  </div></div>`;
+}
 
+// ---------- Partie ----------
+
+function gameView(warn) {
+  const g = S.game;
+  const round = g.stage === "end" ? "Partie terminée" : g.settings.mode === "tours" ? `Tour ${g.round}/${g.settings.maxRounds}` : `Tour ${g.round}`;
+  const tradeBadge = g.trade && (g.trade.to === S.me || g.trade.from === S.me) ? `<span class="dot"></span>` : "";
+  return `
+    <div class="em-app">
+      <aside class="em-side">
+        <div class="em-title" style="margin:0;font-size:1.15rem"><span class="logo">E</span>Empire IDF</div>
+        <div class="em-topline"><span>${round}</span><span>Salon <b>${esc(S.code)}</b></span></div>
+        ${warn}
+        <div class="em-h">${ic("users")} Joueurs</div>
+        ${playersPanel()}
+        ${eventsPanel()}
+        <div class="em-h">${ic("scroll-text")} Journal</div>
+        ${logView()}
+        <div style="margin-top:auto">
+          <button class="secondary btn-ic" onclick="A.share()">${ic("share-2")} Inviter</button>
+          ${leaveButton()}
+        </div>
+      </aside>
+
+      <div class="em-mobile-top">
+        <div class="em-topline"><span><b>Empire IDF</b> · ${round}</span>
+          <button class="icon ghost" style="margin:0" onclick="A.leave()">${ic("log-out")}</button></div>
+        ${warn}
+        <div class="em-strip">${g.players.map((p) => `
+          <div class="em-pl ${p.id === EM.current(g).id ? "turn" : ""} ${p.bankrupt ? "out" : ""}" style="--pc:${p.color}" data-chip-m="${p.id}">
+            ${avatarImg(p)}<span class="tx"><b>${esc(p.name)}</b><span class="cash">${money(p.cash)}</span></span></div>`).join("")}</div>
+      </div>
+
+      <section class="em-mid">${boardView()}</section>
+
+      <aside class="em-side">
+        <div class="em-h">${ic("arrow-left-right")} Échanges</div>
+        ${g.trade ? tradeLiveView() : me() && !me().bankrupt && g.stage !== "end" ? `<button class="secondary btn-ic" onclick="A.openSheet('trade')">${ic("handshake")} Proposer un échange</button>` : ""}
+        <div class="em-h">${ic("building-2")} Mes villes</div>
+        ${myPropsView()}
+      </aside>
+
+      <nav class="em-tabbar">
+        <button onclick="A.openSheet('players')">${ic("users")}Joueurs</button>
+        <button onclick="A.openSheet('props')">${ic("building-2")}Mes villes</button>
+        <button onclick="A.openSheet('trade')">${ic("arrow-left-right")}Échanges${tradeBadge}</button>
+        <button onclick="A.openSheet('log')">${ic("scroll-text")}Journal</button>
+      </nav>
+    </div>
+    ${sheetView()}`;
+}
+
+// ---------- Animations et effets ----------
+const Anim = (() => {
+  const st = {
+    rollId: null, cardId: null, eventId: null, rollingUntil: 0, landedUntil: 0, faces: [5, 2],
+    shown: {}, cash: {}, jail: {}, owners: null, levels: null, groups: null, rank: null, bought: {}, turnKey: null, tradeKey: undefined, mover: null, roller: null,
+  };
+  const ROLL_MS = 500;
   const rolling = () => Date.now() < st.rollingUntil;
   const justLanded = () => Date.now() < st.landedUntil;
   const diceFaces = () => st.faces;
   const justBought = (i) => Date.now() - (st.bought[i] || 0) < 1100;
-  const busy = () => rolling() || !!st.mover;
+  const busy = () => rolling() || !!st.mover || popQueue.length > 0 || popOpen;
 
-  function cellCenter(i) {
+  // Centre d'une case en % du plateau (coins 1,45 fois plus grands).
+  function center(i) {
     const [row, col] = cellPos(i);
-    return [((col - 0.5) / 9) * 100, ((row - 0.5) / 9) * 100];
+    const at = (k) => (k === 1 ? 0.725 : k === 9 ? 1.45 + 7 + 0.725 : 1.45 + (k - 2) + 0.5) / 9.9 * 100;
+    return [at(col), at(row)];
   }
 
-  // Plusieurs pions sur la même case : on les décale un peu.
   function pawnStyle(p) {
     const g = S.game;
     const pos = st.shown[p.id] ?? p.pos;
     const here = g.players.filter((q) => !q.bankrupt && (st.shown[q.id] ?? q.pos) === pos);
     const k = here.findIndex((q) => q.id === p.id);
-    const off = here.length > 1 ? [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1.6], [0, 1.6]][k % 6] : [0, 0];
-    const [x, y] = cellCenter(pos);
-    return `left:calc(${x}% + ${off[0] * 7}px);top:calc(${y}% + ${off[1] * 7}px)`;
+    const off = here.length > 1 ? [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1.4], [0, 1.4]][k % 6] : [0, 0];
+    const [x, y] = center(pos);
+    return `left:calc(${x}% + ${off[0] * 1.6}%);top:calc(${y}% + ${off[1] * 1.6}%)`;
   }
 
   function placePawns() {
@@ -500,7 +531,6 @@ const Anim = (() => {
     }
   }
 
-  // Avance les pions case par case jusqu'à leur vraie position.
   function stepPawns() {
     const g = S.game;
     if (!g) return;
@@ -508,7 +538,7 @@ const Anim = (() => {
     for (const p of g.players) {
       if (p.bankrupt || st.shown[p.id] === undefined || st.shown[p.id] === p.pos) continue;
       const dist = (p.pos - st.shown[p.id] + SPACES.length) % SPACES.length;
-      st.shown[p.id] = dist <= 12 ? (st.shown[p.id] + 1) % SPACES.length : p.pos; // téléportation si recul ou prison
+      st.shown[p.id] = dist <= 12 ? (st.shown[p.id] + 1) % SPACES.length : p.pos;
       moving = true;
       const el = document.getElementById("pawn-" + p.id);
       if (el) {
@@ -516,23 +546,23 @@ const Anim = (() => {
         void el.offsetWidth;
         el.classList.add("hop");
       }
+      if (st.shown[p.id] === p.pos && p.id === S.me) landed(p.pos);
     }
     placePawns();
     if (!moving) {
       clearInterval(st.mover);
       st.mover = null;
-      showCard();
+      nextPop();
     }
   }
 
   function startMoving() {
     if (!st.mover) {
       st.mover = setInterval(stepPawns, 130);
-      stepPawns(); // premier pas immédiat
+      stepPawns();
     }
   }
 
-  // Les dés roulent pendant que le pion part déjà : pas d'attente après le lancer.
   function rollDice(final) {
     st.rollingUntil = Date.now() + ROLL_MS;
     startMoving();
@@ -540,8 +570,7 @@ const Anim = (() => {
     st.roller = setInterval(() => {
       st.faces = [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
       const el = document.getElementById("dice");
-      if (!el) return;
-      el.outerHTML = diceView();
+      if (el) el.outerHTML = diceView();
       if (!rolling()) {
         clearInterval(st.roller);
         st.faces = final;
@@ -551,22 +580,67 @@ const Anim = (() => {
     }, 80);
   }
 
-  let pendingCard = null;
-  function showCard() {
-    if (!pendingCard) return;
-    const c = pendingCard;
-    pendingCard = null;
+  // File de fenêtres (arrivée sur une ville, événement, carte, prison) : une à la fois.
+  const popQueue = [];
+  let popOpen = false;
+  function queuePop(html, cls, ms = 3200) {
+    popQueue.push({ html, cls, ms });
+    if (!st.mover) nextPop();
+  }
+  function nextPop() {
+    if (popOpen || !popQueue.length) return;
+    const { html, cls, ms } = popQueue.shift();
+    popOpen = true;
     const el = document.createElement("div");
-    el.className = "em-cardpop" + (c.good ? "" : " bad");
-    el.innerHTML = `<div class="big">${ic("sparkles")}</div><div class="k">ÉVÉNEMENT</div><div class="t">${esc(c.text)}</div>`;
-    el.onclick = () => el.remove();
+    el.className = "em-pop " + cls;
+    el.innerHTML = html;
+    const close = () => {
+      if (!el.isConnected) return;
+      el.remove();
+      popOpen = false;
+      nextPop();
+    };
+    el.onclick = close;
     document.body.appendChild(el);
     window.lucide?.createIcons();
-    setTimeout(() => el.remove(), 3800);
+    setTimeout(close, ms);
+  }
+  const kickerPop = (icon, kicker, title, text, cls) =>
+    queuePop(`<div class="kicker">${ic(icon)}<div class="k">${kicker}</div></div><div class="t">${esc(title)}</div><div class="bd">${esc(text)}</div>`, cls);
+
+  // Photo de la ville (résumé Wikipédia), gardée en mémoire sur le téléphone.
+  async function photo(title) {
+    const key = "em-photo-" + title;
+    const cached = localStorage.getItem(key);
+    if (cached !== null) return cached;
+    try {
+      const r = await fetch(`https://fr.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g, "_"))}`);
+      const d = await r.json();
+      const url = d.thumbnail?.source || "";
+      localStorage.setItem(key, url);
+      return url;
+    } catch {
+      return "";
+    }
+  }
+
+  // Quand MON pion s'arrête sur une ville ou une gare : fiche avec photo et code postal.
+  async function landed(i) {
+    const s = SPACES[i];
+    if (s.type !== "prop" && s.type !== "rer") return;
+    const g = S.game;
+    const info = CITY_INFO[s.name] || ["", ""];
+    const owner = g.owners[i] !== undefined ? EM.P(g, g.owners[i]) : null;
+    const url = await photo(info[1]); // la photo d'abord : la fiche peut attendre son tour dans la file
+    queuePop(`
+      <div class="ph" style="${url ? `background-image:url('${url.replace(/'/g, "%27")}')` : ""}"><span class="cp">${info[0]}</span></div>
+      <div class="band" style="background:${spaceColor(s)}"><small>${s.type === "prop" ? esc(GROUPS[s.group].name) : "Gare parisienne"}</small><h3>${esc(plain(s.name))}</h3></div>
+      <div class="bd">${owner ? (owner.id === S.me ? "Chez toi !" : `Propriété de <b style="color:${owner.color}">${esc(owner.name)}</b> · loyer <b>${money(EM.rent(g, i))}</b>`) : `À vendre : <b>${money(EM.price(g, i))}</b>`}</div>
+      <div class="credit">Photo : Wikipédia</div>`, "", 3000);
   }
 
   function floatMoney(pid, diff) {
-    const chip = document.querySelector(`[data-chip="${pid}"]`);
+    const chip = document.querySelector(`[data-chip="${pid}"]`)?.offsetParent ? document.querySelector(`[data-chip="${pid}"]`) : document.querySelector(`[data-chip-m="${pid}"]`);
     if (!chip) return;
     const r = chip.getBoundingClientRect();
     const el = document.createElement("div");
@@ -578,58 +652,113 @@ const Anim = (() => {
     setTimeout(() => el.remove(), 1300);
   }
 
-  function banner(text) {
+  function banner(text, icon = "sparkles") {
     const el = document.createElement("div");
     el.className = "em-banner";
-    el.textContent = text;
+    el.innerHTML = `${ic(icon)} ${esc(text)}`;
     document.body.appendChild(el);
-    setTimeout(() => el.remove(), 1600);
+    window.lucide?.createIcons();
+    setTimeout(() => el.remove(), 1800);
   }
 
-  // Appelé après chaque rendu : repère ce qui a changé depuis la dernière fois.
+  function confetti(n = 50) {
+    const colors = ["#f2c14e", "#34c88a", "#4f8cff", "#ff6b6b", "#c084fc", "#fb923c"];
+    for (let k = 0; k < n; k++) {
+      const el = document.createElement("div");
+      el.className = "confetti";
+      el.style.left = Math.random() * 100 + "vw";
+      el.style.background = colors[k % colors.length];
+      el.style.animationDuration = 1.2 + Math.random() * 1.2 + "s";
+      el.style.animationDelay = Math.random() * 0.3 + "s";
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 2800);
+    }
+  }
+
+  const fullGroups = (g, pid) => GROUPS.map((_, k) => k).filter((k) => EM.ownsGroup(g, pid, k));
+
+  // Après chaque rendu : repère ce qui a changé et joue les effets correspondants.
   function afterRender() {
     const g = S.game;
-    if (!g) return;
-    let first = st.owners === null;
-
+    const first = st.owners === null;
     if (g.rollId && g.rollId !== st.rollId) {
-      const isNew = st.rollId !== null;
-      st.rollId = g.rollId;
-      if (isNew) rollDice(g.dice);
+      if (st.rollId !== null) rollDice(g.dice);
       else st.faces = g.dice;
+      st.rollId = g.rollId;
     }
     if (g.card && g.card.id !== st.cardId) {
-      if (st.cardId !== null || !first) pendingCard = g.card;
+      if (!first) kickerPop("sparkles", "CARTE ÉVÉNEMENT", EM.P(g, g.card.pid)?.name || "", g.card.text, g.card.good ? "good" : "bad");
       st.cardId = g.card.id;
+    }
+    if (g.event && g.event.id !== st.eventId) {
+      if (!first) kickerPop("siren", "ÇA BOUGE EN ÎLE-DE-FRANCE", g.event.title, g.event.text, g.event.good ? "good" : "bad");
+      st.eventId = g.event.id;
     }
     for (const p of g.players) {
       if (st.shown[p.id] === undefined) st.shown[p.id] = p.pos;
-      const before = st.cash[p.id];
-      if (before !== undefined && before !== p.cash && !first) floatMoney(p.id, p.cash - before);
+      if (!first && st.cash[p.id] !== undefined && st.cash[p.id] !== p.cash) floatMoney(p.id, p.cash - st.cash[p.id]);
       st.cash[p.id] = p.cash;
+      // Prison : qui t'envoie, qui t'en sort.
+      const wasIn = !!st.jail[p.id];
+      if (!first && !wasIn && p.jail) {
+        kickerPop("lock", "PRISON DE FLEURY", `${JAILERS[(g.rollId || 0) % JAILERS.length]} envoie ${p.name} en prison !`, "Fais un double, paye ou sors ta carte « Libéré sous caution ».", "bad");
+      } else if (!first && wasIn && !p.jail && !p.bankrupt) {
+        kickerPop("lock-open", "LIBÉRÉ !", `${LIBERATOR} fait sortir ${p.name} de prison !`, "Retour dans les rues d'Île-de-France.", "good");
+      }
+      st.jail[p.id] = p.jail;
     }
+    // Célébrations : achats, départements complets, constructions, rang.
+    const mine = me();
     if (!first) {
       for (const i of Object.keys(g.owners)) if (st.owners[i] !== g.owners[i]) st.bought[i] = Date.now();
+      for (const p of g.players) {
+        const now = fullGroups(g, p.id);
+        const before = st.groups[p.id] || [];
+        for (const k of now.filter((k) => !before.includes(k))) {
+          if (p.id === S.me) {
+            confetti();
+            banner(`Département complet : ${GROUPS[k].name} !`, "crown");
+          } else banner(`${p.name} possède tout le ${GROUPS[k].name}`, "crown");
+        }
+      }
+      if (mine) {
+        const levels = EM.owned(g, mine.id).reduce((s, i) => s + EM.level(g, i), 0);
+        if (levels > st.levels) {
+          const built = EM.owned(g, mine.id).find((i) => EM.level(g, i) && EM.level(g, i) > (st.levelMap[i] || 0));
+          confetti(25);
+          banner(built !== undefined ? `${LEVELS[EM.level(g, built)]} construite à ${plain(SPACES[built].name)} !` : "Nouvelle construction !", "hammer");
+        }
+        const r = EM.rank(g, mine).level;
+        if (st.rank !== null && r > st.rank) {
+          confetti(70);
+          banner(`Tu deviens ${EM.rank(g, mine).name} !`, "trending-up");
+        }
+      }
     }
     st.owners = { ...g.owners };
+    st.groups = Object.fromEntries(g.players.map((p) => [p.id, fullGroups(g, p.id)]));
+    st.levelMap = { ...g.levels };
+    if (mine) {
+      st.levels = EM.owned(g, mine.id).reduce((s, i) => s + EM.level(g, i), 0);
+      st.rank = EM.rank(g, mine).level;
+    }
 
     const turnKey = `${g.round}-${g.turn}`;
     if (turnKey !== st.turnKey) {
-      if (st.turnKey && EM.current(g).id === S.me && g.stage === "roll") banner("À toi de jouer !");
+      if (st.turnKey && EM.current(g).id === S.me && g.stage === "roll") banner("À toi de jouer !", "dices");
       st.turnKey = turnKey;
     }
-    // Nouvelle proposition d'échange qui me concerne.
     const tradeKey = g.trade ? JSON.stringify(g.trade) : null;
     if (tradeKey !== st.tradeKey) {
-      if (st.tradeKey !== undefined && g.trade?.to === S.me) banner("Nouvelle proposition d'échange !");
+      if (st.tradeKey !== undefined && g.trade?.to === S.me) banner("Nouvelle proposition d'échange !", "handshake");
       st.tradeKey = tradeKey;
     }
     if (g.players.some((p) => !p.bankrupt && st.shown[p.id] !== p.pos)) startMoving();
-    else if (!st.mover) showCard();
+    else nextPop();
   }
 
   function reset() {
-    Object.assign(st, { rollId: null, cardId: null, shown: {}, cash: {}, owners: null, bought: {}, turnKey: null });
+    Object.assign(st, { rollId: null, cardId: null, eventId: null, shown: {}, cash: {}, jail: {}, owners: null, levels: null, groups: null, rank: null, bought: {}, turnKey: null });
   }
 
   return { rolling, justLanded, diceFaces, justBought, busy, pawnStyle, afterRender, reset };
@@ -642,45 +771,56 @@ const A = {
     if (S.mode === "host") act((g) => EM.act(g, S.me, type, data, Date.now()));
     else room.send("act", { pid: S.me, type, data });
   },
-
   bid(amount) {
     A.do("bid", { amount });
   },
-
   bankrupt() {
     if (confirm("Abandonner la partie ? Tout ce que tu possèdes sera perdu.")) A.do("bankrupt");
   },
-
   sellProp(i) {
-    if (confirm(`Revendre ${SPACES[i].name} à la banque pour ${SPACES[i].price / 2} € ?`)) A.do("sellProp", { space: i });
+    if (confirm(`Revendre ${plain(SPACES[i].name)} à la banque pour ${SPACES[i].price / 2} € ?`)) A.do("sellProp", { space: i });
   },
-
   select(i) {
-    S.sel = S.sel === i ? null : i;
+    S.sel = i;
+    S.sheet = i === null ? null : "space";
     render();
   },
-
-  tab(id) {
-    S.tab = id;
+  openSheet(name) {
+    S.sheet = name;
     render();
   },
-
+  closeSheet() {
+    S.sheet = null;
+    S.sel = null;
+    render();
+  },
+  pickAvatar(a) {
+    S.avatar = a;
+    localStorage.setItem("em-avatar", a);
+    if (S.mode === "host") {
+      S.avatars[S.me] = a;
+      act();
+    } else {
+      room?.send("pick", { pid: S.me, avatar: a });
+      render();
+    }
+  },
+  toggleEvents() {
+    S.settings = { ...S.settings, events: !S.settings.events };
+    act();
+  },
   tradeWith(pid) {
     S.trade = { to: pid, give: [], get: [], giveCash: 0, getCash: 0 };
     render();
   },
-
   tradeToggle(list, i) {
     const l = S.trade[list];
     S.trade[list] = l.includes(i) ? l.filter((x) => x !== i) : [...l, i];
     render();
   },
-
-  // Argent de l'échange : +/− (delta) ou valeur du curseur. Mise à jour sans tout redessiner
-  // pour que le curseur reste fluide.
+  // Argent de l'échange : +/− ou curseur, sans tout redessiner pour garder le curseur fluide.
   tradeCash(list, delta, value) {
-    const g = S.game;
-    const max = list === "give" ? me().cash : EM.P(g, S.trade.to).cash;
+    const max = list === "give" ? me().cash : EM.P(S.game, S.trade.to).cash;
     const v = Math.max(0, Math.min(max, value ?? (S.trade[list + "Cash"] || 0) + delta));
     S.trade[list + "Cash"] = v;
     const label = document.getElementById("cash-" + list);
@@ -690,60 +830,54 @@ const A = {
     if (range && value === undefined) range.value = v;
     if (sum) sum.innerHTML = tradeSummary();
   },
-
   propose() {
     const t = S.trade;
     const offer = { to: t.to, give: { props: t.give, cash: t.giveCash || 0 }, get: { props: t.get, cash: t.getCash || 0 } };
     if (!EM.tradeValid(S.game, { from: S.me, ...offer })) return toast("Échange impossible : vérifie les villes et l'argent.");
     A.do("propose", offer);
     S.trade = { to: null, give: [], get: [], giveCash: 0, getCash: 0 };
+    S.sheet = null;
   },
-
   addBot() {
     if (allPlayers().length >= 6) return;
     const used = S.bots.map((b) => b.name);
     const name = BOT_NAMES.find((n) => !used.includes(n)) || "Robot";
-    S.bots.push({ id: "bot-" + Math.random().toString(36).slice(2, 8), name, bot: true });
+    const avatar = AVATARS.filter((a) => !Object.values(S.avatars).includes(a) && !S.bots.some((b) => b.avatar === a))[0] || AVATARS[0];
+    S.bots.push({ id: "bot-" + Math.random().toString(36).slice(2, 8), name, bot: true, avatar });
     act();
   },
-
   removeBot(id) {
     S.bots = S.bots.filter((b) => b.id !== id);
     act();
   },
-
   setMode(mode, rounds) {
-    S.settings = { mode, maxRounds: rounds || S.settings.maxRounds };
+    S.settings = { ...S.settings, mode, maxRounds: rounds || S.settings.maxRounds };
     act();
   },
-
   start() {
     if (allPlayers().length < 2) return;
     Anim.reset();
     S.game = EM.newGame(allPlayers(), S.settings);
-    S.sel = null;
-    S.tab = "villes";
+    S.sheet = null;
     act();
   },
-
   replay() {
     S.game = null;
     S.lobby = room.presence();
     act();
   },
-
   createRoom(resume) {
     if (!readName()) return;
     S.mode = "host";
     S.hostId = S.me;
+    S.avatars[S.me] = S.avatar;
     const saved = JSON.parse(localStorage.getItem("em-host") || "null");
-    if (resume && saved) Object.assign(S, { code: saved.code, game: saved.game, bots: saved.bots || [], settings: saved.settings || S.settings });
+    if (resume && saved) Object.assign(S, { code: saved.code, game: saved.game, bots: saved.bots || [], settings: saved.settings || S.settings, avatars: saved.avatars || S.avatars });
     else S.code = Common.randomCode();
     connect();
     startHostLoop();
     act();
   },
-
   joinRoom() {
     if (!readName()) return;
     const code = document.getElementById("joincode").value.trim().toUpperCase();
@@ -763,13 +897,11 @@ const A = {
       }
     }, 6000);
   },
-
   share() {
     const link = location.origin + location.pathname + "?salon=" + S.code;
     if (navigator.share) navigator.share({ title: "Empire IDF", text: "Rejoins ma partie d'Empire IDF !", url: link }).catch(() => {});
     else navigator.clipboard.writeText(link).then(() => toast("Lien copié !"));
   },
-
   leave() {
     if (S.game && S.mode === "host" && S.game.stage !== "end" && !confirm("Quitter la partie ?")) return;
     if (S.mode === "host") localStorage.removeItem("em-host");
@@ -777,7 +909,7 @@ const A = {
     room = null;
     clearInterval(hostTimer);
     Anim.reset();
-    Object.assign(S, { mode: null, code: "", hostId: null, hostGone: false, game: null, lobby: [], bots: [], error: "", status: "", sel: null });
+    Object.assign(S, { mode: null, code: "", hostId: null, hostGone: false, game: null, lobby: [], bots: [], avatars: {}, error: "", status: "", sheet: null, sel: null });
     history.replaceState(null, "", location.pathname);
     render();
   },
@@ -800,14 +932,13 @@ function readName() {
 function act(fn) {
   if (S.game && fn) fn(S.game);
   if (S.mode === "host") {
-    localStorage.setItem("em-host", JSON.stringify({ code: S.code, game: S.game, bots: S.bots, settings: S.settings }));
-    room?.send("state", { hostId: S.me, game: S.game, lobby: S.lobby, bots: S.bots, settings: S.settings, now: Date.now() });
+    localStorage.setItem("em-host", JSON.stringify({ code: S.code, game: S.game, bots: S.bots, settings: S.settings, avatars: S.avatars }));
+    room?.send("state", { hostId: S.me, game: S.game, lobby: S.lobby, bots: S.bots, settings: S.settings, avatars: S.avatars, now: Date.now() });
   }
   render();
 }
 
-// L'hôte fait avancer les enchères et joue pour les robots, une action à la fois, en
-// attendant la fin des animations (dés, pions) pour qu'on puisse suivre.
+// L'hôte fait avancer les enchères et joue pour les robots, en attendant la fin des animations.
 let hostTimer = null;
 function startHostLoop() {
   clearInterval(hostTimer);
@@ -817,7 +948,7 @@ function startHostLoop() {
     let changed = EM.tick(g, Date.now());
     if (!Anim.busy() && EM.botStep(g, Date.now())) changed = true;
     if (changed) act();
-    else if (g.stage === "auction") render(); // compte à rebours
+    else if (g.stage === "auction") render();
   }, 900);
 }
 
@@ -825,19 +956,24 @@ function startHostLoop() {
 
 function connect() {
   room = Common.joinRoom("empire-" + S.code, S.me, S.name, {
-    events: ["state", "act"],
+    events: ["state", "act", "pick"],
     message(event, payload) {
       if (event === "state" && S.mode === "player") {
+        const firstContact = !S.hostId;
         Object.assign(S, {
-          hostId: payload.hostId, hostGone: false, game: payload.game, lobby: payload.lobby,
-          bots: payload.bots, settings: payload.settings, clockOffset: payload.now - Date.now(),
+          hostId: payload.hostId, hostGone: false, game: payload.game, lobby: payload.lobby, bots: payload.bots,
+          settings: payload.settings, avatars: payload.avatars || {}, clockOffset: payload.now - Date.now(),
         });
         if (!payload.game) Anim.reset();
+        if (firstContact || (!payload.game && payload.avatars?.[S.me] !== S.avatar)) room.send("pick", { pid: S.me, avatar: S.avatar });
         render();
       }
-      if (event === "act" && S.mode === "host" && S.game) {
-        act((g) => EM.act(g, payload.pid, payload.type, payload.data, Date.now()));
+      if (S.mode !== "host") return;
+      if (event === "pick" && !S.game) {
+        S.avatars[payload.pid] = payload.avatar;
+        act();
       }
+      if (event === "act" && S.game) act((g) => EM.act(g, payload.pid, payload.type, payload.data, Date.now()));
     },
     presence(list) {
       if (S.mode === "player") {
@@ -858,7 +994,6 @@ function connect() {
   });
 }
 
-// Compte à rebours des enchères côté joueurs.
 setInterval(() => {
   if (S.mode === "player" && S.game?.stage === "auction") render();
 }, 1000);

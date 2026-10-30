@@ -44,7 +44,7 @@ La description de chaque rôle est dans le jeu (« Les règles et les rôles »)
 
 ### Empire IDF
 
-Jeu de plateau original (dans le genre des jeux de propriétés) sur les villes d'Île-de-France, en ligne dans un salon privé, avec des robots pour compléter la table. 32 cases : 21 villes en 7 départements (chacune avec son icône), 4 grandes gares parisiennes, événements, taxe, cagnotte, garde à vue et prison de Fleury-Mérogis. Enchères quand on refuse d'acheter, échanges entre joueurs, constructions (Résidence, Immeuble, Tour) sur un département complet, faillite. Les loyers augmentent de 20 % tous les 10 tours. Fin au nombre de tours choisi ou à la faillite (80 tours maximum).
+Jeu de plateau original (dans le genre des jeux de propriétés) sur les villes d'Île-de-France, en ligne dans un salon privé, avec des robots pour compléter la table. 32 cases : 21 villes en 7 départements (chacune avec son icône), 4 grandes gares parisiennes, événements, taxe, cagnotte, garde à vue et prison de Fleury-Mérogis. Enchères quand on refuse d'acheter, échanges entre joueurs, constructions (Résidence, Immeuble, Tour) sur un département complet, faillite. Mode événements (optionnel) : manif, émeutes, prix de l'essence, tweet de Trump… qui font varier loyers, prix et argent. Chaque joueur choisit son personnage (DiceBear, CC BY 4.0) ; en s'arrêtant sur une ville, on voit sa photo (Wikipédia) et son code postal. Les loyers augmentent de 20 % tous les 10 tours. Fin au nombre de tours choisi ou à la faillite (80 tours maximum).
 
 ## Configurer le mode en ligne (Supabase)
 
