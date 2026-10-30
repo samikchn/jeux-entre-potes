@@ -52,6 +52,10 @@ function render() {
   document.body.classList.toggle("ingame", !!g);
   const key = [S.mode, !!g, g?.stage, g?.turn, S.sheet].join("|");
   Common.render(document.getElementById("app"), view(), key);
+  // La fenêtre ouverte ne rejoue son animation d'ouverture que si elle vient de s'ouvrir.
+  const sheetKey = S.sheet ? `${S.sheet}|${S.sel}` : null;
+  if (sheetKey && sheetKey === render.sheetKey) document.querySelector(".em-sheet-bg")?.classList.add("still");
+  render.sheetKey = sheetKey;
   window.lucide?.createIcons();
   if (g) Anim.afterRender();
 }
@@ -423,7 +427,10 @@ function spaceSheet(i) {
     }[s.type];
     rows = `<tr><td colspan="2" style="text-align:left;font-weight:400">${txt}</td></tr>`;
   }
+  // Photo de la ville : déjà en mémoire, ou chargée puis affichée au rendu suivant.
+  const url = info ? Anim.photoNow(info[1]) : "";
   return `
+    ${url ? `<div class="deed-ph" style="background-image:url('${url.replace(/'/g, "%27")}')"><span class="cp">${info[0]}</span></div>` : ""}
     <div class="deed-hd" style="background:${spaceColor(s)}">
       <small>${esc(kindName(s))}${info ? ` · ${info[0]}` : ""}</small>
       <h2>${esc(plain(s.name))}</h2>${s.price ? `<b>${money(EM.price(g, i))}</b>` : ""}
@@ -554,7 +561,7 @@ const Anim = (() => {
         void el.offsetWidth;
         el.classList.add("hop");
       }
-      if (st.shown[p.id] === p.pos && p.id === S.me) landed(p.pos);
+      if (st.shown[p.id] === p.pos) landed(p.pos, p);
     }
     placePawns();
     if (!moving) {
@@ -634,12 +641,23 @@ const Anim = (() => {
 
   // Quand MON pion s'arrête sur une ville, une gare ou un service : fiche avec photo et code
   // postal. Si elle est à vendre, on l'achète (ou on lance les enchères) directement depuis la fiche.
-  async function landed(i) {
+  // Quand un AUTRE joueur tombe chez moi, je vois aussi la fiche (avec le loyer que je touche).
+  async function landed(i, who) {
     const s = SPACES[i];
     if (!["prop", "rer", "util"].includes(s.type)) return;
     const g = S.game;
     const info = CITY_INFO[s.name] || ["", ""];
     const owner = g.owners[i] !== undefined ? EM.P(g, g.owners[i]) : null;
+    if (who.id !== S.me) {
+      if (owner?.id !== S.me) return;
+      const url = info[1] ? await photo(info[1]) : "";
+      queuePop(`
+        ${info[0] ? `<div class="ph" style="${url ? `background-image:url('${url.replace(/'/g, "%27")}')` : ""}"><span class="cp">${info[0]}</span></div>` : ""}
+        <div class="band" style="background:${spaceColor(s)}"><small>${esc(kindName(s))}</small><h3>${esc(plain(s.name))}</h3></div>
+        <div class="bd"><b style="color:${who.color}">${esc(who.name)}</b> tombe chez toi : tu touches <b>${money(EM.rent(g, i))}</b> !</div>
+        ${url ? `<div class="credit">Photo : Wikipédia</div>` : ""}`, "good", 3000);
+      return;
+    }
     const url = info[1] ? await photo(info[1]) : ""; // la photo d'abord : la fiche peut attendre son tour dans la file
     const p = me();
     const forSale = !owner && S.game.stage === "buy" && EM.current(S.game).id === S.me;
@@ -777,7 +795,16 @@ const Anim = (() => {
     Object.assign(st, { rollId: null, cardId: null, eventId: null, shown: {}, cash: {}, jail: {}, owners: null, levels: null, groups: null, rank: null, bought: {}, turnKey: null });
   }
 
-  return { rolling, justLanded, diceFaces, justBought, busy, pawnStyle, afterRender, reset };
+  // Version immédiate de photo() pour les fiches : l'adresse si elle est connue, sinon on la
+  // cherche et on redessine une fois trouvée.
+  function photoNow(title) {
+    const cached = localStorage.getItem("em-photo-" + title);
+    if (cached !== null) return cached;
+    photo(title).then((url) => url && S.sheet === "space" && render());
+    return "";
+  }
+
+  return { rolling, justLanded, diceFaces, justBought, busy, pawnStyle, afterRender, reset, photoNow };
 })();
 
 // ---------- Actions ----------
