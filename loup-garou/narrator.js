@@ -201,9 +201,8 @@ const Narrator = (() => {
         clearTimeout(maxTimer);
         clearTimeout(endTimer);
         recognizer = null;
-        // Sur iPhone, le micro laisse le son en « enregistrement » : on repasse en lecture
-        // pour que la voix du narrateur puisse répondre.
-        Common.playbackAudio();
+        // Fin de l'écoute : on repasse le son en « lecture » pour que la voix puisse répondre.
+        Common.micAudio(false);
         log(heard.trim() ? `🎤 entendu : « ${heard.trim()} »` : "🎤 rien entendu" + (lastError ? ` (${lastError})` : ""));
         resolve(heard.trim() || null);
       };
@@ -225,7 +224,9 @@ const Narrator = (() => {
       };
       r.onend = finish;
       lastError = "";
-      log("🎤 écoute…");
+      // Le mode « lecture » de l'iPhone coupe le micro : on passe en lecture + enregistrement.
+      Common.micAudio(true);
+      log(`🎤 écoute… (son : ${Common.audioSessionType()})`);
       try {
         r.start();
       } catch (e) {

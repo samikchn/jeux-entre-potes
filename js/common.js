@@ -85,14 +85,24 @@ const Common = (() => {
   // Retour au clic : effet visuel, petit « tic » sonore et vibration (Android ; l'iPhone ne
   // laisse pas les sites vibrer).
   // Sur iPhone, le son d'un site est coupé par le mode silencieux, sauf s'il se déclare
-  // « lecteur » comme une app de musique (Audio Session API de Safari).
-  function playbackAudio() {
+  // « lecteur » comme une app de musique (Audio Session API de Safari). Mais ce mode coupe le
+  // micro : pendant une écoute, on passe en « lecture et enregistrement » (micActive).
+  let micActive = false;
+  function setAudioSession(type) {
     try {
-      if (navigator.audioSession && navigator.audioSession.type !== "playback") navigator.audioSession.type = "playback";
+      if (navigator.audioSession && navigator.audioSession.type !== type) navigator.audioSession.type = type;
     } catch {
       // navigateur sans cette API : rien à faire
     }
   }
+  function playbackAudio() {
+    if (!micActive) setAudioSession("playback");
+  }
+  function micAudio(on) {
+    micActive = on;
+    setAudioSession(on ? "play-and-record" : "playback");
+  }
+  const audioSessionType = () => navigator.audioSession?.type || "non disponible";
   playbackAudio();
 
   let audio = null;
@@ -131,5 +141,5 @@ const Common = (() => {
     { passive: true }
   );
 
-  return { playerId, esc, toast, avatar, render, randomCode, joinRoom, onlineConfigured, playbackAudio };
+  return { playerId, esc, toast, avatar, render, randomCode, joinRoom, onlineConfigured, playbackAudio, micAudio, audioSessionType };
 })();
