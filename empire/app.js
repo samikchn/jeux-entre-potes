@@ -489,9 +489,10 @@ function gameView(warn) {
             ${avatarImg(p)}<span class="tx"><b>${esc(p.name)}</b><span class="cash">${money(p.cash)}</span></span></div>`).join("")}</div>
       </div>
 
-      <section class="em-mid">${boardView()}</section>
+      <section class="em-mid">${boardView()}<div class="em-popslot mobile"></div></section>
 
       <aside class="em-side">
+        <div class="em-popslot"></div>
         <div class="em-h">${ic("arrow-left-right")} Échanges</div>
         ${g.trade ? tradeLiveView() : me() && !me().bankrupt && g.stage !== "end" ? `<button class="secondary btn-ic" onclick="A.openSheet('trade')">${ic("handshake")} Proposer un échange</button>` : ""}
         <div class="em-h">${ic("building-2")} Mes villes</div>
@@ -599,6 +600,15 @@ const Anim = (() => {
   // File de fenêtres (arrivée sur une ville, événement, carte, prison) : une à la fois.
   const popQueue = [];
   let popOpen = false;
+  // La fenêtre se cale exactement sur l'emplacement réservé visible (téléphone ou ordinateur).
+  function placePop(el = document.querySelector(".em-pop")) {
+    const slot = [...document.querySelectorAll(".em-popslot")].find((s) => s.offsetParent);
+    if (!el || !slot) return;
+    const r = slot.getBoundingClientRect();
+    Object.assign(el.style, { left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px" });
+  }
+  window.addEventListener("resize", () => placePop());
+
   // Rien ne s'affiche par-dessus une fiche ouverte : les fenêtres attendent qu'elle se ferme,
   // et celles devenues trop vieilles (plus de 10 s) sont oubliées.
   function queuePop(html, cls, ms = 3200) {
@@ -615,6 +625,20 @@ const Anim = (() => {
     const el = document.createElement("div");
     el.className = "em-pop " + cls;
     el.innerHTML = html;
+    // Image (photo ou icône) à gauche, texte à droite.
+    const media = el.querySelector(":scope > .ph, :scope > .kicker");
+    const tx = document.createElement("div");
+    tx.className = "tx";
+    [...el.children].filter((c) => c !== media).forEach((c) => tx.appendChild(c));
+    el.innerHTML = "";
+    if (media) {
+      const box = document.createElement("div");
+      box.className = "media";
+      box.appendChild(media);
+      el.appendChild(box);
+    }
+    el.appendChild(tx);
+    placePop(el);
     const close = () => {
       if (!el.isConnected) return;
       el.remove();
@@ -679,7 +703,7 @@ const Anim = (() => {
       ${info[0] ? `<div class="ph" style="${url ? `background-image:url('${url.replace(/'/g, "%27")}')` : ""}"><span class="cp">${info[0]}</span></div>` : ""}
       <div class="band" style="background:${spaceColor(s)}"><small>${esc(kindName(s))}</small><h3>${esc(plain(s.name))}</h3></div>
       <div class="bd">${owner ? (owner.id === S.me ? "Chez toi !" : `Propriété de <b style="color:${owner.color}">${esc(owner.name)}</b> · loyer <b>${money(EM.rent(g, i))}</b>`) : `À vendre : <b>${money(cost)}</b>`}</div>
-      ${forSale ? `<div class="acts"><button onclick="A.do('buy')" ${p.cash >= cost ? "" : "disabled"}>Acheter ${money(cost)}</button>
+      ${forSale ? `<div class="acts"><button onclick="A.do('buy')" ${p.cash >= cost ? "" : "disabled"}>Acheter</button>
         <button class="secondary" onclick="A.do('auction')">Enchères</button></div>` : ""}
       ${url ? `<div class="credit">Photo : Wikipédia</div>` : ""}`, forSale ? "buy" : "", forSale ? 12000 : 3000);
   }
@@ -697,14 +721,9 @@ const Anim = (() => {
     setTimeout(() => el.remove(), 1300);
   }
 
-  function banner(text, icon = "sparkles") {
-    const el = document.createElement("div");
-    el.className = "em-banner";
-    el.innerHTML = `${ic(icon)} ${esc(text)}`;
-    document.body.appendChild(el);
-    window.lucide?.createIcons();
-    setTimeout(() => el.remove(), 1800);
-  }
+  // Petite annonce (à toi de jouer, construction…) : même emplacement que les autres fenêtres.
+  const banner = (text, icon = "sparkles") =>
+    queuePop(`<div class="kicker">${ic(icon)}</div><div class="t">${esc(text)}</div>`, "good", 1800);
 
   function confetti(n = 50) {
     const colors = ["#f2c14e", "#34c88a", "#4f8cff", "#ff6b6b", "#c084fc", "#fb923c"];
@@ -726,6 +745,7 @@ const Anim = (() => {
   function afterRender() {
     const g = S.game;
     const first = st.owners === null;
+    placePop();
     // Photos des villes chargées dès le début : elles s'affichent sans attente pendant la partie.
     if (first) Object.values(CITY_INFO).forEach(([, title]) => photo(title));
     // Fiche d'achat ouverte alors que l'achat est réglé (acheté, enchères…) : on la ferme.
