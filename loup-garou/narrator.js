@@ -177,8 +177,9 @@ const Narrator = (() => {
   let recognizer = null;
 
   // Écoute une phrase et renvoie le texte compris (null si rien ou si l'écoute est impossible).
-  // Safari (iPhone) ne s'arrête pas tout seul quand on se tait : on coupe nous-mêmes après
-  // `silenceMs` sans nouveau mot, ou au bout de `maxMs` au total.
+  // Réglage simple (une phrase, sans mode continu) : c'est celui qui marche sur iPhone.
+  // Sécurités : on coupe après `silenceMs` suivant un résultat, au bout de `maxMs` au total,
+  // et on rend la main même si Safari ne signale jamais la fin de l'écoute.
   function listen({ silenceMs = 1500, maxMs = 12000 } = {}) {
     if (!Recognition) return Promise.resolve(null);
     stop();
@@ -186,9 +187,10 @@ const Narrator = (() => {
       const r = new Recognition();
       recognizer = r;
       r.lang = "fr-FR";
-      r.interimResults = true; // pour savoir quand la personne parle encore
-      r.continuous = true;
+      r.interimResults = false;
+      r.continuous = false;
       r.maxAlternatives = 1;
+      r.onaudiostart = () => log("🎙️ micro ouvert");
       let heard = "";
       let done = false;
       let silenceTimer = null;
@@ -206,15 +208,16 @@ const Narrator = (() => {
         resolve(heard.trim() || null);
       };
       let endTimer = null;
-      const halt = () => {
+      const halt = (why) => {
+        if (why) log("⏹️ écoute arrêtée : " + why);
         try { r.stop(); } catch { /* déjà arrêtée */ }
         endTimer = setTimeout(finish, 1500); // si Safari n'envoie jamais « fin »
       };
-      const maxTimer = setTimeout(halt, maxMs);
+      const maxTimer = setTimeout(() => halt(`${maxMs / 1000} s écoulées`), maxMs);
       r.onresult = (e) => {
         heard = Array.from(e.results).map((res) => res[0].transcript).join(" ");
         clearTimeout(silenceTimer);
-        silenceTimer = setTimeout(halt, silenceMs);
+        silenceTimer = setTimeout(() => halt("silence"), silenceMs);
       };
       r.onerror = (e) => {
         lastError = e.error === "not-allowed" ? "Micro refusé : autorise le micro pour Safari." : "Écoute impossible : " + e.error;
@@ -234,7 +237,7 @@ const Narrator = (() => {
   }
 
   function stopListening() {
-    if (recognizer && stopListening.current) stopListening.current();
+    if (recognizer && stopListening.current) stopListening.current("à la demande");
   }
 
   // ---------- Journal en direct (option) ----------
