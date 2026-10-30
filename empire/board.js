@@ -81,6 +81,24 @@ const CARDS = [
   { text: "Panne de voiture sur l'A86 : paye 80 € à la cagnotte.", cash: -80 },
   { text: "Prime de fin d'année : reçois 100 €.", cash: 100 },
   { text: "Tu payes la tournée en terrasse : donne 15 € à chaque joueur.", toEach: 15 },
+
+  // Cartes de la bande
+  { text: "Frisko te vomit dessus : pressing en urgence, paye 60 €.", cash: -60 },
+  { text: "On t'a cramé en train d'utiliser ta VM : amende de 100 €.", cash: -100 },
+  { text: "Nora Izri t'envoie un message… tu perds tous tes moyens : paye 50 €.", cash: -50 },
+  { text: "Ton parrainage Boursorama / Revolut est validé : reçois 80 €.", cash: 80 },
+  { text: "Nil devient un fleuve et tu avais investi dessus : reçois 150 €.", cash: 150 },
+  { text: "Anys va chier, l'odeur t'arrive au nez : tu fuis en taxi, paye 40 €.", cash: -40 },
+  { text: "La meuf d'Adrien te taxe ton argent. Dommage : paye 70 €.", cash: -70 },
+  { text: "Merwan t'invite à un afterwork… mais c'est toi qui payes les boissons : 90 €.", cash: -90 },
+
+  // Cartes classiques
+  { text: "Tu revends ta vieille console sur Leboncoin : reçois 60 €.", cash: 60 },
+  { text: "Ton passe Navigo a expiré pendant un contrôle : amende de 35 €.", cash: -35 },
+  { text: "Remboursement des impôts : reçois 120 €.", cash: 120 },
+  { text: "Ton téléphone tombe dans la Seine : paye 100 €.", cash: -100 },
+  { text: "Ta tante te glisse un billet en douce : reçois 40 €.", cash: 40 },
+  { text: "Tu gagnes au loto du bar-tabac : reçois 50 €.", cash: 50 },
 ];
 
 const PLAYER_COLORS = ["#f87171", "#60a5fa", "#4ade80", "#facc15", "#c084fc", "#fb923c"];
