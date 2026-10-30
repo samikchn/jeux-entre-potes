@@ -2,7 +2,7 @@
 // robots) ; les fonctions modifient `g` directement.
 //
 // Déroulé d'un tour (g.stage) :
-//   "roll"    : le joueur lance les dés (ou sort des Bouchons)
+//   "roll"    : le joueur lance les dés (ou sort de prison)
 //   "buy"     : il est sur un terrain libre : acheter, ou mettre aux enchères
 //   "auction" : enchères ouvertes à tous, qui se terminent après quelques secondes sans offre
 //   "debt"    : il doit payer plus que ce qu'il a : vendre, ou faire faillite
@@ -115,7 +115,7 @@ const EM = (() => {
     p.pos = JAIL;
     p.jail = 1;
     g.doubles = 0;
-    log(g, `${p.name} est coincé dans les Bouchons sur le périph' !`);
+    log(g, `${p.name} est envoyé en prison à Fleury !`);
   }
 
   // Ce qui se passe quand on arrive sur une case. `next` : étape après résolution.
@@ -152,8 +152,10 @@ const EM = (() => {
   function drawCard(g, p, next) {
     if (!g.deck.length) g.deck = shuffle(CARDS.map((_, i) => i));
     const c = CARDS[g.deck.shift()];
-    g.card = { text: c.text, pid: p.id };
-    log(g, `🎴 ${p.name} : ${c.text}`);
+    // cardId / rollId : compteurs qui permettent à l'interface de lancer ses animations.
+    g.cardId = (g.cardId || 0) + 1;
+    g.card = { text: c.text, pid: p.id, id: g.cardId, good: !!(c.cash > 0 || c.fromEach || c.jailCard) };
+    log(g, `${p.name} : ${c.text}`);
     const others = active(g).filter((q) => q.id !== p.id);
     if (c.cash > 0) p.cash += c.cash;
     else if (c.cash < 0) charge(g, p, -c.cash, "pot", next);
@@ -192,16 +194,17 @@ const EM = (() => {
   function roll(g, p) {
     const d = [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
     g.dice = d;
+    g.rollId = (g.rollId || 0) + 1;
     g.card = null;
     const isDouble = d[0] === d[1];
     const total = d[0] + d[1];
 
     if (p.jail) {
       if (isDouble) {
-        log(g, `${p.name} fait un double (${d[0]}-${d[1]}) et sort des Bouchons !`);
+        log(g, `${p.name} fait un double (${d[0]}-${d[1]}) et sort de prison !`);
         p.jail = 0;
       } else if (p.jail >= 3) {
-        log(g, `${p.name} sort des Bouchons après 3 tours et paye ${JAIL_FEE} €.`);
+        log(g, `${p.name} sort de prison après 3 tours et paye ${JAIL_FEE} €.`);
         p.jail = 0;
         if (!charge(g, p, JAIL_FEE, "pot", "done")) {
           g.pendingMove = total;
@@ -209,7 +212,7 @@ const EM = (() => {
         }
       } else {
         p.jail++;
-        log(g, `${p.name} reste coincé dans les Bouchons (${d[0]}-${d[1]}).`);
+        log(g, `${p.name} reste en prison (${d[0]}-${d[1]}).`);
         g.stage = "done";
         return;
       }
@@ -262,7 +265,7 @@ const EM = (() => {
       const w = P(g, a.bidder);
       w.cash -= a.bid;
       g.owners[a.space] = w.id;
-      log(g, `🔨 ${w.name} remporte ${s.name} pour ${a.bid} €.`);
+      log(g, `${w.name} remporte ${s.name} pour ${a.bid} €.`);
     } else {
       log(g, `Personne n'a enchéri : ${s.name} reste libre.`);
     }
@@ -279,7 +282,7 @@ const EM = (() => {
     if (!canBuild(g, p.id, i) || p.cash < SPACES[i].build) return;
     p.cash -= SPACES[i].build;
     g.levels[i] = level(g, i) + 1;
-    log(g, `🏗️ ${p.name} construit : ${SPACES[i].name} devient ${LEVELS[g.levels[i]]}.`);
+    log(g, `${p.name} construit : ${SPACES[i].name} devient ${LEVELS[g.levels[i]]}.`);
   }
 
   function sellLevel(g, p, i) {
@@ -326,7 +329,7 @@ const EM = (() => {
     p.bankrupt = true;
     p.jail = 0;
     if (g.trade && (g.trade.from === p.id || g.trade.to === p.id)) g.trade = null;
-    log(g, `💸 ${p.name} fait faillite${creditor ? ` : tout revient à ${creditor.name}` : ""}.`);
+    log(g, `${p.name} fait faillite${creditor ? ` : tout revient à ${creditor.name}` : ""}.`);
     const wasTurn = current(g).id === p.id;
     g.debt = null;
     if (!checkEnd(g) && wasTurn) nextTurn(g);
@@ -358,7 +361,7 @@ const EM = (() => {
     if (!winner) return false;
     g.winner = winner.id;
     g.stage = "end";
-    log(g, `🏆 ${winner.name} gagne la partie avec ${netWorth(g, winner)} € de patrimoine !`);
+    log(g, `${winner.name} gagne la partie avec ${netWorth(g, winner)} € de patrimoine !`);
     return true;
   }
 
@@ -379,7 +382,7 @@ const EM = (() => {
     const t = { from: p.id, to: offer.to, give: offer.give, get: offer.get };
     if (g.trade || !tradeValid(g, t)) return;
     g.trade = t;
-    log(g, `🤝 ${p.name} propose un échange à ${P(g, t.to).name}.`);
+    log(g, `${p.name} propose un échange à ${P(g, t.to).name}.`);
   }
 
   function respond(g, p, accept) {
@@ -395,7 +398,7 @@ const EM = (() => {
     t.get.props.forEach((i) => (g.owners[i] = t.from));
     from.cash += t.get.cash - t.give.cash;
     p.cash += t.give.cash - t.get.cash;
-    log(g, `🤝 ${p.name} accepte l'échange avec ${from.name}.`);
+    log(g, `${p.name} accepte l'échange avec ${from.name}.`);
   }
 
   // ---------- Point d'entrée ----------
@@ -413,14 +416,14 @@ const EM = (() => {
           p.cash -= JAIL_FEE;
           g.pot += JAIL_FEE;
           p.jail = 0;
-          log(g, `${p.name} paye ${JAIL_FEE} € pour sortir des Bouchons.`);
+          log(g, `${p.name} paye ${JAIL_FEE} € pour sortir de prison.`);
         }
         break;
       case "jailCard":
         if (mine && g.stage === "roll" && p.jail && p.jailCards) {
           p.jailCards--;
           p.jail = 0;
-          log(g, `${p.name} utilise son Passe Navigo pour sortir des Bouchons.`);
+          log(g, `${p.name} est libéré sous caution et sort de prison.`);
         }
         break;
       case "buy":

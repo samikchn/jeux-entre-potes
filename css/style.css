@@ -307,38 +307,3 @@ button.danger { background: linear-gradient(135deg, #dc2626, #f97316); }
 }
 .live-log .err { color: #fca5a5; }
 
-/* Empire IDF : plateau 9 × 9 */
-.board {
-  display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); grid-template-rows: repeat(9, minmax(0, 1fr));
-  gap: 2px; width: 100%; aspect-ratio: 1; margin-bottom: 14px;
-}
-.cell {
-  position: relative; margin: 0; padding: 2px 1px 0; min-width: 0; overflow: hidden;
-  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
-  border-radius: 6px; background: var(--card-solid); border: 1px solid var(--border);
-  color: var(--text); box-shadow: none; font-weight: 600;
-}
-.cell.start, .cell.jail, .cell.pause, .cell.control { background: #2a2346; }
-.cell.sel { outline: 2px solid #fff; }
-.cell .band { position: absolute; top: 0; left: 0; right: 0; height: 5px; }
-.cell .ic { font-size: .7rem; line-height: 1; margin-top: 4px; min-height: .7rem; }
-.cell .lb { font-size: .48rem; line-height: 1.05; text-align: center; word-break: break-word; }
-.cell .pr { font-size: .45rem; color: var(--muted); }
-.cell .lv { font-size: .5rem; color: #facc15; letter-spacing: -1px; }
-.cell .tk { position: absolute; bottom: 1px; left: 1px; right: 1px; display: flex; flex-wrap: wrap; gap: 1px; justify-content: center; }
-.token { width: 8px; height: 8px; border-radius: 50%; border: 1px solid #000; }
-.center-area {
-  grid-row: 2 / 9; grid-column: 2 / 9;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-  text-align: center; font-size: .85rem; padding: 6px;
-}
-.center-area .dice { font-size: 2.6rem; line-height: 1; }
-.center-area .evt { font-size: .75rem; color: #ddd6fe; }
-.dot { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
-.countdown { color: #fde68a; font-weight: 700; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
-button.chip {
-  display: inline-block; width: auto; margin: 0; padding: 6px 10px; font-size: .8rem; font-weight: 500;
-  background: var(--card); border: 1px solid var(--border); color: var(--text); box-shadow: none;
-}
-button.chip.on { background: rgba(236, 72, 153, .25); border-color: var(--accent2); }
