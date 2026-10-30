@@ -319,3 +319,4 @@ button.danger { background: linear-gradient(135deg, #dc2626, #f97316); }
   background: var(--card); border: 1px solid var(--border); color: var(--text); text-decoration: none; box-shadow: none;
 }
 .room-btn.danger { background: rgba(239, 68, 68, .18); border-color: rgba(239, 68, 68, .5); color: #fca5a5; }
+.room-manage { display: block; margin: 10px 0 0 auto; padding: 6px 12px; font-size: .8rem; width: auto; background: transparent; border: 1px solid rgba(255, 255, 255, .15); color: inherit; opacity: .75; border-radius: 8px; }

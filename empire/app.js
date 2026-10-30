@@ -624,19 +624,22 @@ const Anim = (() => {
     queuePop(`<div class="kicker">${ic(icon)}<div class="k">${kicker}</div></div><div class="t">${esc(title)}</div><div class="bd">${esc(text)}</div>`, cls);
 
   // Photo de la ville (résumé Wikipédia), gardée en mémoire sur le téléphone.
-  async function photo(title) {
-    const key = "em-photo-" + title;
-    const cached = localStorage.getItem(key);
-    if (cached !== null) return cached;
-    try {
-      const r = await fetch(`https://fr.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g, "_"))}`);
-      const d = await r.json();
-      const url = d.thumbnail?.source || "";
-      localStorage.setItem(key, url);
-      return url;
-    } catch {
-      return "";
-    }
+  // Seules les photos trouvées sont gardées : un échec (réseau, Wikipédia saturé) sera retenté.
+  const photoKey = (title) => "em-ph2-" + title;
+  const photoLoading = {};
+  function photo(title) {
+    const cached = localStorage.getItem(photoKey(title));
+    if (cached) return Promise.resolve(cached);
+    photoLoading[title] = photoLoading[title] || fetch(`https://fr.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g, "_"))}`)
+      .then((r) => r.json())
+      .then((d) => {
+        const url = d.thumbnail?.source || "";
+        if (url) localStorage.setItem(photoKey(title), url);
+        return url;
+      })
+      .catch(() => "")
+      .finally(() => delete photoLoading[title]);
+    return photoLoading[title];
   }
 
   // Quand MON pion s'arrête sur une ville, une gare ou un service : fiche avec photo et code
@@ -649,13 +652,17 @@ const Anim = (() => {
     const info = CITY_INFO[s.name] || ["", ""];
     const owner = g.owners[i] !== undefined ? EM.P(g, g.owners[i]) : null;
     if (who.id !== S.me) {
-      if (owner?.id !== S.me) return;
       const url = info[1] ? await photo(info[1]) : "";
+      const name = `<b style="color:${who.color}">${esc(who.name)}</b>`;
+      const text = !owner ? `${name} tombe ici : à vendre <b>${money(EM.price(g, i))}</b>.`
+        : owner.id === S.me ? `${name} tombe chez toi : tu touches <b>${money(EM.rent(g, i))}</b> !`
+        : owner.id === who.id ? `${name} est chez lui.`
+        : `${name} paye <b>${money(EM.rent(g, i))}</b> à <b style="color:${owner.color}">${esc(owner.name)}</b>.`;
       queuePop(`
         ${info[0] ? `<div class="ph" style="${url ? `background-image:url('${url.replace(/'/g, "%27")}')` : ""}"><span class="cp">${info[0]}</span></div>` : ""}
         <div class="band" style="background:${spaceColor(s)}"><small>${esc(kindName(s))}</small><h3>${esc(plain(s.name))}</h3></div>
-        <div class="bd"><b style="color:${who.color}">${esc(who.name)}</b> tombe chez toi : tu touches <b>${money(EM.rent(g, i))}</b> !</div>
-        ${url ? `<div class="credit">Photo : Wikipédia</div>` : ""}`, "good", 3000);
+        <div class="bd">${text}</div>
+        ${url ? `<div class="credit">Photo : Wikipédia</div>` : ""}`, owner?.id === S.me ? "good" : "", 2500);
       return;
     }
     const url = info[1] ? await photo(info[1]) : ""; // la photo d'abord : la fiche peut attendre son tour dans la file
@@ -713,6 +720,8 @@ const Anim = (() => {
   function afterRender() {
     const g = S.game;
     const first = st.owners === null;
+    // Photos des villes chargées dès le début : elles s'affichent sans attente pendant la partie.
+    if (first) Object.values(CITY_INFO).forEach(([, title]) => photo(title));
     // Fiche d'achat ouverte alors que l'achat est réglé (acheté, enchères…) : on la ferme.
     if (g.stage !== "buy") document.querySelector(".em-pop.buy")?.click();
     if (g.rollId && g.rollId !== st.rollId) {
@@ -798,9 +807,9 @@ const Anim = (() => {
   // Version immédiate de photo() pour les fiches : l'adresse si elle est connue, sinon on la
   // cherche et on redessine une fois trouvée.
   function photoNow(title) {
-    const cached = localStorage.getItem("em-photo-" + title);
-    if (cached !== null) return cached;
-    photo(title).then((url) => url && S.sheet === "space" && render());
+    const cached = localStorage.getItem(photoKey(title));
+    if (cached) return cached;
+    if (!photoLoading[title]) photo(title).then((url) => url && S.sheet === "space" && render());
     return "";
   }
 

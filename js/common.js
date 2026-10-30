@@ -144,6 +144,14 @@ const Common = (() => {
 
   // Liste HTML des salons. root : chemin vers la racine du site ("" sur l'accueil, "../" dans un jeu).
   // game : n'afficher que les salons de ce jeu (facultatif).
+  // Mode « Gérer » : un bouton Supprimer sur tous les salons (pas seulement les siens), pour
+  // faire le ménage entre potes.
+  let managing = false;
+  function toggleManage() {
+    managing = !managing;
+    dirListeners.forEach((f) => f(listRooms()));
+  }
+
   function roomsView(rooms, { root = "", game = null } = {}) {
     const list = rooms.filter((r) => GAMES[r.game] && (!game || r.game === game));
     if (!list.length) return `<p class="muted" style="margin:0">Aucun salon ouvert pour l'instant.</p>`;
@@ -153,8 +161,9 @@ const Common = (() => {
         <div class="room-tx"><b>${esc(GAMES[r.game].name)} · ${esc(r.code)}</b>
           <small class="muted">${esc(r.host)}${r.hostId === me ? " (toi)" : ""} · ${r.players} joueur${r.players > 1 ? "s" : ""} · ${r.status === "playing" ? "partie en cours" : "en attente"}</small></div>
         <a class="room-btn" href="${root}${GAMES[r.game].path}?salon=${encodeURIComponent(r.code)}">Rejoindre</a>
-        ${r.hostId === me ? `<button class="room-btn danger" onclick="Common.askClose('${r.game}', '${esc(r.code)}')">Supprimer</button>` : ""}
-      </div>`).join("");
+        ${r.hostId === me || managing ? `<button class="room-btn danger" onclick="Common.askClose('${r.game}', '${esc(r.code)}')">Supprimer</button>` : ""}
+      </div>`).join("") + `
+      <button class="room-manage" onclick="Common.toggleManage()">${managing ? "Terminer" : "Gérer les salons"}</button>`;
   }
 
   function askClose(game, code) {
@@ -164,12 +173,12 @@ const Common = (() => {
     }
   }
 
-  // Côté hôte : ferme le salon si le créateur le demande depuis un autre écran.
+  // Côté hôte : ferme le salon quand quelqu'un le supprime depuis la liste.
   function onCloseRequest(game, getRoom, close) {
     directory();
     closeListeners.push((p) => {
       const r = getRoom();
-      if (r && p.game === game && p.code === r.code && p.by === r.hostId) close();
+      if (r && p.game === game && p.code === r.code) close();
     });
   }
 
@@ -234,6 +243,6 @@ const Common = (() => {
 
   return {
     playerId, esc, toast, avatar, render, randomCode, joinRoom, onlineConfigured, playbackAudio, micAudio, audioSessionType,
-    GAMES, announceRoom, watchRooms, closeRoom, askClose, onCloseRequest, roomsView,
+    GAMES, announceRoom, watchRooms, closeRoom, askClose, onCloseRequest, roomsView, toggleManage,
   };
 })();
