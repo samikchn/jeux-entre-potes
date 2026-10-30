@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f0c1d">
+  <title>Test de l'IA</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <style>
+    #log { font-family: ui-monospace, Menlo, monospace; font-size: .78rem; white-space: pre-wrap; word-break: break-word; max-height: 55vh; overflow: auto; }
+    #log .ok { color: #86efac; }
+    #log .err { color: #fca5a5; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>🤖 <span class="grad">Test de l'IA</span></h1>
+
+    <div class="card">
+      <h2>1. La clé</h2>
+      <div id="keyinfo"></div>
+      <div class="row">
+        <button id="pg" class="secondary">Gemini</button>
+        <button id="pc" class="secondary">Claude</button>
+      </div>
+      <div class="row">
+        <input id="key" type="password" placeholder="Coller une nouvelle clé (optionnel)" autocomplete="off">
+        <button id="savekey">OK</button>
+      </div>
+      <p class="muted" style="font-size:.8rem">La clé reste sur ce téléphone, comme dans le jeu.</p>
+    </div>
+
+    <div class="card">
+      <h2>2. Les tests</h2>
+      <p class="muted">Fais-les dans l'ordre et regarde le journal en bas.</p>
+      <button id="t1">A. L'IA répond-elle ? (texte)</button>
+      <button id="t2" class="secondary">B. Détails techniques de l'appel</button>
+      <button id="t3" class="secondary">C. La voix lit une réponse de l'IA</button>
+      <button id="t4" class="secondary">D. Le micro m'entend</button>
+      <button id="t5">E. Tout enchaîné : micro → IA → voix</button>
+      <p class="muted" style="font-size:.8rem">Pour C et E : désactive le mode silencieux et monte le son.</p>
+    </div>
+
+    <div class="card">
+      <h2>Journal</h2>
+      <div id="log"></div>
+      <button class="secondary" id="copy">Copier le journal</button>
+    </div>
+
+    <p class="center"><a href="./" class="muted">← Retour au Loup-Garou</a></p>
+  </main>
+
+  <script src="../js/common.js"></script>
+  <script src="roles.js"></script>
+  <script src="narrator.js"></script>
+  <script>
+    const logEl = document.getElementById("log");
+    const t0 = Date.now();
+    function log(msg, cls = "") {
+      const line = document.createElement("div");
+      line.className = cls;
+      line.textContent = `[${((Date.now() - t0) / 1000).toFixed(1)}s] ${msg}`;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    const SYSTEM = "Tu es le narrateur d'une partie de Loup-Garou entre amis. Réponds en 1 ou 2 phrases courtes en français, à lire à voix haute.";
+
+    function showKey() {
+      const key = Narrator.apiKey();
+      document.getElementById("keyinfo").innerHTML =
+        `<p>Fournisseur : <b>${Narrator.provider() === "claude" ? "Claude" : "Gemini"}</b><br>` +
+        (key ? `Clé enregistrée : ✅ (${key.length} caractères, finit par …${Common.esc(key.slice(-4))})` : "Clé enregistrée : ❌ aucune") + "</p>";
+      document.getElementById("pg").className = Narrator.provider() === "gemini" ? "" : "secondary";
+      document.getElementById("pc").className = Narrator.provider() === "claude" ? "" : "secondary";
+    }
+    showKey();
+    log("Appareil : " + navigator.userAgent);
+    log("Reconnaissance vocale : " + (Narrator.canListen() ? "disponible" : "NON disponible"), Narrator.canListen() ? "ok" : "err");
+    log("Synthèse vocale : " + (window.speechSynthesis ? "disponible" : "NON disponible"), window.speechSynthesis ? "ok" : "err");
+
+    document.getElementById("pg").onclick = () => { Narrator.setProvider("gemini"); showKey(); };
+    document.getElementById("pc").onclick = () => { Narrator.setProvider("claude"); showKey(); };
+    document.getElementById("savekey").onclick = () => {
+      const v = document.getElementById("key").value.trim();
+      if (!v) return;
+      Narrator.setApiKey(v);
+      document.getElementById("key").value = "";
+      showKey();
+      log("Nouvelle clé enregistrée.", "ok");
+    };
+
+    // A. Appel par le même code que le jeu.
+    async function askAI(question) {
+      if (!Narrator.apiKey()) {
+        log("✖ Pas de clé enregistrée : colle-la en haut.", "err");
+        return null;
+      }
+      log(`→ question envoyée à ${Narrator.provider()} : « ${question} »`);
+      const start = Date.now();
+      const reply = await Narrator.ask(SYSTEM, [{ role: "user", text: question }]);
+      const s = ((Date.now() - start) / 1000).toFixed(1);
+      if (reply) log(`✔ réponse en ${s} s : « ${reply} »`, "ok");
+      else log(`✖ pas de réponse après ${s} s. Erreur : ${Narrator.lastError() || "aucun texte reçu"}`, "err");
+      return reply;
+    }
+    document.getElementById("t1").onclick = () => askAI("[Un joueur dit] Bonjour narrateur, tu m'entends ?");
+
+    // B. Appel brut, pour voir le statut HTTP et le début de la réponse.
+    document.getElementById("t2").onclick = async () => {
+      const key = Narrator.apiKey();
+      if (!key) return log("✖ Pas de clé enregistrée.", "err");
+      const gemini = Narrator.provider() === "gemini";
+      log(`→ appel direct à ${gemini ? "Gemini (gemini-flash-lite-latest)" : "Claude"}…`);
+      const start = Date.now();
+      try {
+        const res = gemini
+          ? await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent", {
+              method: "POST",
+              headers: { "content-type": "application/json", "x-goog-api-key": key },
+              body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "Dis bonjour en trois mots." }] }] }),
+            })
+          : await fetch("https://api.anthropic.com/v1/messages", {
+              method: "POST",
+              headers: {
+                "content-type": "application/json", "x-api-key": key, "anthropic-version": "2026-10-21",
+                "anthropic-dangerous-direct-browser-access": "true",
+              },
+              body: JSON.stringify({ model: "claude-opus-5-5", max_tokens: 500, output_config: { effort: "low" }, messages: [{ role: "user", content: "Dis bonjour en trois mots." }] }),
+            });
+        const body = await res.text();
+        log(`statut HTTP ${res.status} en ${((Date.now() - start) / 1000).toFixed(1)} s`, res.ok ? "ok" : "err");
+        log("début de la réponse : " + body.replace(/"thoughtSignature":\s*"[^"]*"/g, '"thoughtSignature":"…"').slice(0, 500));
+      } catch (e) {
+        log(`✖ l'appel n'a pas abouti (${e.name}) : ${e.message}. Souvent : pas d'internet, ou appel bloqué par le navigateur.`, "err");
+      }
+    };
+
+    function speakAndWatch(text) {
+      log("→ la voix lit la réponse…");
+      return new Promise((resolve) => {
+        Narrator.speak(text).then(resolve);
+        setTimeout(() => log(Narrator.started() ? "✔ la voix a démarré" : "✖ la voix n'a pas démarré", Narrator.started() ? "ok" : "err"), 2500);
+      });
+    }
+
+    document.getElementById("t3").onclick = async () => {
+      // Une phrase tout de suite (débloque la voix sur iPhone), puis la réponse de l'IA.
+      Narrator.speak("Je demande à l'IA.");
+      const reply = await askAI("Présente-toi en une phrase comme narrateur.");
+      if (reply) await speakAndWatch(reply);
+    };
+
+    async function listenOnce() {
+      if (!Narrator.canListen()) return log("✖ Ce navigateur ne sait pas écouter.", "err"), null;
+      log("🎤 parle maintenant (l'écoute s'arrête toute seule quand tu te tais)…");
+      const heard = await Narrator.listen();
+      if (heard) log(`✔ entendu : « ${heard} »`, "ok");
+      else log("✖ rien entendu. " + (Narrator.lastError() || ""), "err");
+      return heard;
+    }
+    document.getElementById("t4").onclick = listenOnce;
+
+    document.getElementById("t5").onclick = async () => {
+      const heard = await listenOnce();
+      if (!heard) return;
+      const reply = await askAI("[Un joueur dit] " + heard);
+      if (reply) await speakAndWatch(reply);
+    };
+
+    document.getElementById("copy").onclick = () => {
+      navigator.clipboard?.writeText(logEl.innerText).then(() => log("journal copié", "ok"), () => log("copie impossible", "err"));
+    };
+  </script>
+</body>
+</html>

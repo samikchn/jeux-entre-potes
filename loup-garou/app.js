@@ -356,7 +356,8 @@ function aiSettings() {
              <p class="muted" style="font-size:.8rem">Offre gratuite : Google peut utiliser les échanges pour améliorer ses services. Le narrateur ne reçoit jamais les rôles secrets.</p>`
           : `<p class="muted" style="font-size:.85rem">Crée une clé sur <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a> (payant, quelques centimes par partie).</p>`}
          <div class="row"><input id="aikey" type="password" placeholder="Colle ta clé ici" autocomplete="off"><button onclick="A.saveAiKey()">OK</button></div>`}
-    <p class="muted" style="font-size:.8rem">La clé reste uniquement sur ce téléphone.</p>`;
+    <p class="muted" style="font-size:.8rem">La clé reste uniquement sur ce téléphone.</p>
+    <p class="center"><a href="diagnostic-ia.html">🧪 L'IA ne marche pas ? Page de test</a></p>`;
 }
 
 // Choix du narrateur pour le mode un seul téléphone.

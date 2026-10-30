@@ -182,6 +182,9 @@ const Narrator = (() => {
       };
       r.onend = () => {
         recognizer = null;
+        // Sur iPhone, le micro laisse le son en « enregistrement » : on repasse en lecture
+        // pour que la voix du narrateur puisse répondre.
+        Common.playbackAudio();
         resolve(heard.trim() || null);
       };
       r.start();
