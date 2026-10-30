@@ -23,7 +23,7 @@ main.em-main { max-width: 520px; padding-top: 8px; }
 /* Plateau */
 .em-board {
   position: relative; display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); grid-template-rows: repeat(9, minmax(0, 1fr));
-  gap: 2px; aspect-ratio: 1; width: 100%; padding: 4px; border-radius: 16px;
+  gap: 1.5px; aspect-ratio: 1; width: 100%; padding: 3px; border-radius: 14px;
   background: #1b4332; box-shadow: 0 20px 50px rgba(0, 0, 0, .5), inset 0 0 0 2px rgba(255, 255, 255, .08);
 }
 .em-cell {
@@ -32,11 +32,23 @@ main.em-main { max-width: 520px; padding-top: 8px; }
   display: flex; flex-direction: column; align-items: stretch;
 }
 .em-cell:active { transform: scale(.94); }
-.em-cell .band { height: 24%; flex: 0 0 auto; }
-.em-cell .body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1px; gap: 1px; }
-.em-cell .nm { font-size: .44rem; line-height: 1.05; text-align: center; word-break: break-word; letter-spacing: -.01em; }
-.em-cell .pr { font-size: .42rem; color: #6b7280; font-weight: 600; }
-.em-cell .big { font-size: .95rem; color: #374151; }
+/* Bande de couleur du département avec l'icône de la ville */
+.em-cell .band {
+  height: 32%; flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  color: rgba(0, 0, 0, .7); font-size: .62rem;
+}
+.em-cell.rer .band { color: #fff; }
+.em-cell .body { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 1px 2px; gap: 1px; }
+/* Nom sur 2 lignes maximum, coupé proprement (jamais de mot tronqué au milieu de la case) */
+.em-cell .nm {
+  font-size: .48rem; line-height: 1.08; text-align: center; letter-spacing: -.02em; max-width: 100%;
+  overflow-wrap: normal; word-break: normal; hyphens: manual;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.em-cell .nm.s { font-size: .42rem; }
+.em-cell .nm.xs { font-size: .37rem; letter-spacing: -.03em; }
+.em-cell .pr { font-size: .42rem; color: #6b7280; font-weight: 600; line-height: 1; }
+.em-cell .big { font-size: .85rem; color: #374151; line-height: 1; }
 .em-cell.corner { background: #f3e2c2; }
 .em-cell.corner .nm { font-size: .45rem; }
 .em-cell.jail { background: repeating-linear-gradient(90deg, #e5e7eb 0 5px, #9ca3af 5px 7px); }
@@ -166,4 +178,32 @@ button.chip {
   background: var(--card); border: 1px solid var(--border); color: var(--text); box-shadow: none;
 }
 button.chip.on { background: rgba(236, 72, 153, .25); border-color: var(--accent2); }
+/* Échanges */
+.em-tiles { display: flex; flex-wrap: wrap; gap: 6px; }
+button.em-ptile {
+  width: 74px; margin: 0; padding: 0; border-radius: 10px; overflow: hidden; background: #fbf6ea; color: #1f2937;
+  display: flex; flex-direction: column; align-items: stretch; box-shadow: 0 3px 8px rgba(0, 0, 0, .3); border: 2px solid transparent;
+}
+button.em-ptile:disabled { opacity: 1; }
+button.em-ptile.on { border-color: #facc15; transform: translateY(-3px); box-shadow: 0 8px 16px rgba(250, 204, 21, .35); }
+.em-ptile .bd { height: 20px; display: flex; align-items: center; justify-content: center; color: rgba(0, 0, 0, .7); font-size: .8rem; }
+.em-ptile .nm { font-size: .7rem; font-weight: 700; padding: 3px 3px 0; line-height: 1.1; }
+.em-ptile .pr { font-size: .65rem; color: #6b7280; padding-bottom: 4px; }
+.em-cashpill { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 999px; background: rgba(250, 204, 21, .18); color: #fde68a; font-weight: 700; font-size: .8rem; }
+.em-cash { background: rgba(0, 0, 0, .2); border-radius: 12px; padding: 10px; margin: 10px 0; }
+.em-cash .v { flex: 1; text-align: center; font-size: 1.3rem; font-weight: 800; color: #fde68a; }
+.em-cash input[type="range"] { width: 100%; accent-color: #facc15; padding: 0; margin: 8px 0 2px; background: none; border: 0; }
+.em-trade-sum { font-size: .85rem; margin: 6px 0; }
+.em-trade-sum .plus { color: #4ade80; }
+.em-trade-sum .minus { color: #f87171; }
+.em-trade-live {
+  background: linear-gradient(135deg, rgba(139, 92, 246, .25), rgba(236, 72, 153, .18)); border: 1px solid rgba(236, 72, 153, .5);
+  border-radius: 16px; padding: 12px; margin-bottom: 12px; animation: pop .3s ease-out;
+}
+.em-trade-live.for-me { box-shadow: 0 0 0 2px #facc15, 0 0 24px rgba(250, 204, 21, .35); }
+.em-trade-live .hd { font-weight: 700; font-size: .9rem; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.em-trade-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+.em-trade-cols small { display: block; margin-bottom: 6px; color: var(--muted); }
+.em-trade-cols .em-ptile { width: 64px; }
+
 .em-trophy { font-size: 3.5rem; color: #facc15; animation: pop .5s ease-out; }

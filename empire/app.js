@@ -44,7 +44,7 @@ const isHost = () => S.mode === "host";
 const me = () => S.game && EM.P(S.game, S.me);
 const money = (n) => `${Math.round(n).toLocaleString("fr-FR")} €`;
 const leaveButton = () => `<button class="ghost btn-ic" onclick="A.leave()">${ic("log-out")} Quitter</button>`;
-const spaceColor = (s) => (s.type === "prop" ? GROUPS[s.group].color : s.type === "rer" ? "#93c5fd" : "#e5e7eb");
+const spaceColor = (s) => (s.type === "prop" ? GROUPS[s.group].color : s.type === "rer" ? "#475569" : "#e5e7eb");
 
 function view() {
   if (!S.mode) return homeView();
@@ -79,7 +79,7 @@ function homeView() {
       <details id="rules">
         <summary><b>Les règles</b></summary>
         <p class="muted">Lance les dés et fais le tour du plateau. Achète les villes où tu t'arrêtes, ou mets-les aux enchères. Les autres te payent un loyer quand ils tombent chez toi.</p>
-        <p class="muted">Possède tout un département pour doubler les loyers et construire : Résidence, Immeuble, puis Tour. Les 4 lignes de RER rapportent plus si tu en as plusieurs.</p>
+        <p class="muted">Possède tout un département pour doubler les loyers et construire : Résidence, Immeuble, puis Tour. Les 4 grandes gares parisiennes rapportent plus si tu en as plusieurs.</p>
         <p class="muted">Cases spéciales : Événement (cartes surprises), Taxe foncière (va dans la cagnotte), Pause terrasse (rafle la cagnotte), Garde à vue (direction la prison de Fleury). En prison, tu sors avec un double, en payant ${EM.JAIL_FEE} € ou avec une carte « Libéré sous caution ».</p>
         <p class="muted">Le Grand Paris s'embourgeoise : tous les 10 tours, les loyers augmentent de 20 %. Échanges de villes et d'argent à tout moment. Fin au nombre de tours choisi (le plus gros patrimoine gagne) ou à la faillite (au plus tard après ${EM.MAX_ROUNDS} tours).</p>
       </details>
@@ -133,21 +133,27 @@ function cellPos(i) {
   return [1 + (i - 24), 9];
 }
 
+// Taille du nom selon le mot le plus long, pour qu'il tienne dans la case sans être coupé.
+function labelSize(label) {
+  const longest = Math.max(...label.split(/[\s­-]/).map((w) => w.length));
+  return longest <= 6 ? "" : longest <= 8 ? "s" : "xs";
+}
+
 function cellView(s, i) {
   const g = S.game;
   const [row, col] = cellPos(i);
   const owner = g.owners[i] !== undefined ? EM.P(g, g.owners[i]) : null;
   const lvl = EM.level(g, i);
   const corner = ["start", "jail", "pause", "control"].includes(s.type);
-  const label = s.short || (s.type === "prop" || s.type === "rer" ? s.name.split(/[- ]/)[0] : s.name);
   const bought = Anim.justBought(i);
+  const titled = s.type === "prop" || s.type === "rer";
   return `
     <button class="em-cell ${s.type} ${corner ? "corner" : ""} ${S.sel === i ? "sel" : ""} ${bought ? "bought" : ""}"
       style="grid-row:${row};grid-column:${col};${owner ? `--oc:${owner.color}` : ""}" onclick="A.select(${i})">
-      ${s.type === "prop" ? `<span class="band" style="background:${GROUPS[s.group].color}"></span>` : ""}
+      ${titled ? `<span class="band" style="background:${spaceColor(s)}">${ic(s.icon)}</span>` : ""}
       <span class="body">
-        ${SPACE_ICON[s.type] ? `<span class="big">${ic(SPACE_ICON[s.type])}</span>` : ""}
-        <span class="nm">${esc(label)}</span>
+        ${!titled ? `<span class="big">${ic(SPACE_ICON[s.type])}</span>` : ""}
+        <span class="nm ${labelSize(s.short || s.name)}">${esc(s.short || s.name)}</span>
         ${lvl ? `<span class="lv">${ic(LEVEL_ICON[lvl])}</span>` : s.price && !owner ? `<span class="pr">${s.price} €</span>` : ""}
       </span>
       ${owner ? `<span class="own" style="background:${owner.color}"></span>` : ""}
@@ -223,7 +229,7 @@ function centerView() {
   if (g.stage === "buy") {
     return `
       <div class="em-deed"><div class="hd" style="background:${spaceColor(s)}">${esc(s.name)}</div>
-        <div class="bd">${s.type === "prop" ? esc(GROUPS[s.group].name) : "Ligne de RER"}<br><b>${money(s.price)}</b></div></div>
+        <div class="bd">${s.type === "prop" ? esc(GROUPS[s.group].name) : "Gare parisienne"}<br><b>${money(s.price)}</b></div></div>
       <div class="row">
         <button onclick="A.do('buy')" ${p.cash >= s.price ? "" : "disabled"}>Acheter</button>
         <button class="secondary" onclick="A.do('auction')">Enchères</button>
@@ -263,14 +269,14 @@ function gameView() {
   return `
     <div class="phase-wrap"><span class="phase">${roundTxt}</span></div>
     ${playersBar()}
+    ${tradeLiveView()}
     ${boardView()}
     ${g.stage === "end" ? endView() : ""}
     <div class="em-tabs">${tabs.map(([id, icon, label]) => `
       <button class="${S.tab === id ? "on" : ""}" onclick="A.tab('${id}')">${ic(icon)}<br>${label}</button>`).join("")}</div>
     ${card(body)}
     ${leaveButton()}
-    ${S.sel !== null ? spaceSheet(S.sel) : ""}
-    ${tradeIncomingView()}`;
+    ${S.sel !== null ? spaceSheet(S.sel) : ""}`;
 }
 
 function spaceSheet(i) {
@@ -283,7 +289,7 @@ function spaceSheet(i) {
       ${LEVELS.slice(1).map((l, k) => `<tr><td>${ic(LEVEL_ICON[k + 1])} ${l}</td><td>${s.rent * LEVEL_MULT[k + 1]} €</td></tr>`).join("")}
       <tr><td>Prix d'une construction</td><td>${s.build} €</td></tr>`;
   } else if (s.type === "rer") {
-    rows = [1, 2, 3, 4].map((n) => `<tr><td>${n} RER possédé${n > 1 ? "s" : ""}</td><td>${25 * 2 ** (n - 1)} €</td></tr>`).join("");
+    rows = [1, 2, 3, 4].map((n) => `<tr><td>${n} gare${n > 1 ? "s" : ""} possédée${n > 1 ? "s" : ""}</td><td>${25 * 2 ** (n - 1)} €</td></tr>`).join("");
   } else {
     const txt = {
       start: `Touche ${START_BONUS} € à chaque passage.`,
@@ -300,7 +306,7 @@ function spaceSheet(i) {
     <div class="em-sheet-bg" onclick="if(event.target===this)A.select(null)">
       <div class="em-sheet">
         <div class="deed-hd" style="background:${spaceColor(s)}">
-          <small>${s.type === "prop" ? esc(GROUPS[s.group].name) : s.type === "rer" ? "Ligne de RER" : "Case spéciale"}</small>
+          <small>${s.type === "prop" ? esc(GROUPS[s.group].name) : s.type === "rer" ? "Gare parisienne" : "Case spéciale"}</small>
           <h2>${esc(s.name)}</h2>
           ${s.price ? `<b>${money(s.price)}</b>` : ""}
         </div>
@@ -340,7 +346,7 @@ function myPropsView() {
       return `<li>
         <span class="sw" style="background:${spaceColor(s)}"></span>
         <span class="tx" onclick="A.select(${i})"><b>${esc(s.name)}</b>
-          <small>${lvl ? LEVELS[lvl] : full ? "Département complet" : s.type === "rer" ? "RER" : "Terrain"} · loyer ${money(EM.rent(g, i))}</small></span>
+          <small>${lvl ? LEVELS[lvl] : full ? "Département complet" : s.type === "rer" ? "Gare" : "Terrain"} · loyer ${money(EM.rent(g, i))}</small></span>
         ${canBuildNow && EM.canBuild(g, p.id, i) && p.cash >= s.build ? `<button class="icon" title="Construire (${s.build} €)" onclick="A.do('build', {space: ${i}})">${ic("hammer")}</button>` : ""}
         ${canAct && lvl ? `<button class="icon secondary" title="Revendre une construction" onclick="A.do('sellLevel', {space: ${i}})">${ic("house")}</button>` : ""}
         ${canAct && !lvl ? `<button class="icon secondary" title="Revendre à la banque (${s.price / 2} €)" onclick="A.sellProp(${i})">${ic("wallet")}</button>` : ""}
@@ -352,53 +358,96 @@ function myPropsView() {
 
 // ---------- Échanges ----------
 
-const tradeSide = (o) => [o.props.map((i) => esc(SPACES[i].name)).join(", "), o.cash ? money(o.cash) : ""].filter(Boolean).join(" + ") || "rien";
+// Petite tuile de ville (couleur du département, icône, nom, prix).
+function propTile(i, onclick = "", on = false) {
+  const s = SPACES[i];
+  return `<button class="em-ptile ${on ? "on" : ""}" ${onclick ? `onclick="${onclick}"` : "disabled"}>
+    <span class="bd" style="background:${spaceColor(s)}">${ic(s.icon)}</span>
+    <span class="nm">${esc(s.short || s.name)}</span><span class="pr">${s.price} €</span></button>`;
+}
 
-function tradeIncomingView() {
-  const t = S.game.trade;
-  if (!t || t.to !== S.me) return "";
-  const from = EM.P(S.game, t.from);
+// Ce que donne un côté de l'échange : tuiles + argent.
+function tradeSideView(o) {
+  const parts = o.props.map((i) => propTile(i)).join("");
+  return `<div class="em-tiles">${parts}${o.cash ? `<span class="em-cashpill">${ic("wallet")} ${money(o.cash)}</span>` : ""}${!parts && !o.cash ? `<span class="muted">rien</span>` : ""}</div>`;
+}
+
+// Encart visible par tous dès qu'un échange est proposé.
+function tradeLiveView() {
+  const g = S.game;
+  const t = g.trade;
+  if (!t) return "";
+  const from = EM.P(g, t.from);
+  const to = EM.P(g, t.to);
+  const who = (p) => `<b style="color:${p.color}">${esc(p.id === S.me ? "Toi" : p.name)}</b>`;
+  const actions = t.to === S.me
+    ? `<div class="row"><button class="btn-ic" onclick="A.do('respond', {accept: true})">${ic("handshake")} Accepter</button>
+         <button class="secondary" onclick="A.do('respond', {accept: false})">Refuser</button></div>`
+    : t.from === S.me
+      ? `<button class="secondary" onclick="A.do('cancelTrade')">Annuler ma proposition</button>`
+      : `<p class="muted center" style="margin:6px 0 0">En attente de la réponse de ${esc(to.name)}…</p>`;
   return `
-    <div class="em-sheet-bg">
-      <div class="em-sheet">
-        <h2 class="btn-ic" style="justify-content:flex-start">${ic("handshake")} ${esc(from.name)} te propose un échange</h2>
-        <table><tr><td>Tu reçois</td><td>${tradeSide(t.give)}</td></tr><tr><td>Tu donnes</td><td>${tradeSide(t.get)}</td></tr></table>
-        <div class="row" style="margin-top:12px"><button onclick="A.do('respond', {accept: true})">Accepter</button>
-          <button class="secondary" onclick="A.do('respond', {accept: false})">Refuser</button></div>
+    <div class="em-trade-live ${t.to === S.me ? "for-me" : ""}">
+      <div class="hd">${ic("arrow-left-right")} Échange en cours : ${who(from)} → ${who(to)}</div>
+      <div class="em-trade-cols">
+        <div><small>${who(from)} donne</small>${tradeSideView(t.give)}</div>
+        <div><small>${who(to)} donne</small>${tradeSideView(t.get)}</div>
       </div>
+      ${actions}
+    </div>`;
+}
+
+const tradeValue = (props, cash) => props.reduce((s, i) => s + SPACES[i].price, 0) + (cash || 0);
+
+function cashControl(list, max) {
+  const v = Math.min(S.trade[list + "Cash"] || 0, max);
+  return `
+    <div class="em-cash">
+      <div class="row" style="align-items:center">
+        <button class="icon secondary" onclick="A.tradeCash('${list}', -50)">${ic("minus")}</button>
+        <span class="v" id="cash-${list}">${money(v)}</span>
+        <button class="icon secondary" onclick="A.tradeCash('${list}', 50)">${ic("plus")}</button>
+      </div>
+      <input id="range-${list}" type="range" min="0" max="${max}" step="10" value="${v}" oninput="A.tradeCash('${list}', 0, +this.value)">
+      <div class="muted" style="font-size:.75rem;display:flex;justify-content:space-between"><span>0 €</span><span>${money(max)}</span></div>
     </div>`;
 }
 
 function tradeView() {
   const g = S.game;
-  const t = g.trade;
-  if (t) {
-    const from = EM.P(g, t.from);
-    const to = EM.P(g, t.to);
-    return t.from === S.me
-      ? `<p>Échange proposé à <b>${esc(to.name)}</b> : tu donnes ${tradeSide(t.give)}, tu reçois ${tradeSide(t.get)}. En attente de sa réponse…</p>
-         <button class="secondary" onclick="A.do('cancelTrade')">Annuler</button>`
-      : `<p class="muted">${esc(from.name)} propose un échange à ${esc(to.name)}…</p>`;
-  }
+  if (g.trade) return tradeLiveView();
   if (!me() || me().bankrupt) return `<p class="muted">Tu ne joues plus dans cette partie.</p>`;
   if (g.stage === "auction" || g.stage === "end") return `<p class="muted">Pas d'échange pendant les enchères.</p>`;
   const d = S.trade;
   const others = EM.active(g).filter((p) => p.id !== S.me);
   const tradable = (pid) => EM.owned(g, pid).filter((i) => !(SPACES[i].type === "prop" && EM.groupSpaces(SPACES[i].group).some((j) => EM.level(g, j))));
-  const chips = (ids, list) => ids.length
-    ? ids.map((i) => `<button class="chip ${d[list].includes(i) ? "on" : ""}" onclick="A.tradeToggle('${list}', ${i})">${esc(SPACES[i].name)}</button>`).join("")
-    : `<span class="muted">aucune</span>`;
+  const tiles = (ids, list) => ids.length
+    ? `<div class="em-tiles">${ids.map((i) => propTile(i, `A.tradeToggle('${list}', ${i})`, d[list].includes(i))).join("")}</div>`
+    : `<p class="muted">Aucune propriété échangeable.</p>`;
   const partner = d.to && EM.P(g, d.to);
   return `
-    <p class="muted">Avec qui veux-tu échanger ?</p>
-    <div class="row" style="flex-wrap:wrap">${others.map((p) => `
-      <button class="${d.to === p.id ? "" : "secondary"}" onclick="A.tradeWith('${p.id}')">${esc(p.name)}</button>`).join("")}</div>
+    <h3 style="margin-top:0">1. Avec qui ?</h3>
+    <div class="em-players" style="padding-bottom:4px">${others.map((p) => `
+      <button class="em-chip ${d.to === p.id ? "turn" : ""}" style="--pc:${p.color};margin:0;width:auto" onclick="A.tradeWith('${p.id}')">
+        <span class="av">${esc(p.name[0] || "?")}</span><span class="nm">${esc(p.name)}</span></button>`).join("")}</div>
     ${partner ? `
-      <h3>Tu donnes</h3><div class="chips">${chips(tradable(S.me), "give")}</div>
-      <input id="giveCash" type="number" min="0" step="10" placeholder="+ argent (€)" value="${d.giveCash || ""}" oninput="S.trade.giveCash=+this.value||0">
-      <h3>Tu demandes à ${esc(partner.name)}</h3><div class="chips">${chips(tradable(partner.id), "get")}</div>
-      <input id="getCash" type="number" min="0" step="10" placeholder="+ argent (€)" value="${d.getCash || ""}" oninput="S.trade.getCash=+this.value||0">
-      <button class="btn-ic" onclick="A.propose()">${ic("handshake")} Proposer l'échange</button>` : ""}`;
+      <h3>2. Tu donnes</h3>
+      ${tiles(tradable(S.me), "give")}
+      ${cashControl("give", me().cash)}
+      <h3>3. Tu demandes à ${esc(partner.name)}</h3>
+      ${tiles(tradable(partner.id), "get")}
+      ${cashControl("get", partner.cash)}
+      <div class="em-trade-sum" id="trade-sum">${tradeSummary()}</div>
+      <button class="btn-ic" onclick="A.propose()">${ic("handshake")} Proposer l'échange</button>` : `<p class="muted">Choisis un joueur pour composer ton offre.</p>`}`;
+}
+
+function tradeSummary() {
+  const d = S.trade;
+  const give = tradeValue(d.give, d.giveCash);
+  const get = tradeValue(d.get, d.getCash);
+  const diff = get - give;
+  return `Tu donnes <b>${money(give)}</b> · tu reçois <b>${money(get)}</b>
+    <span class="${diff >= 0 ? "plus" : "minus"}">(${diff >= 0 ? "+" : "−"}${money(Math.abs(diff))} pour toi)</span>`;
 }
 
 function logView() {
@@ -420,7 +469,7 @@ function endView() {
 // achats. Rien ne change les règles : seulement ce qu'on voit, et quand.
 const Anim = (() => {
   const st = { rollId: null, cardId: null, rollingUntil: 0, landedUntil: 0, faces: [5, 2], shown: {}, cash: {}, owners: null, bought: {}, turnKey: null, mover: null, roller: null };
-  const ROLL_MS = 800;
+  const ROLL_MS = 500;
 
   const rolling = () => Date.now() < st.rollingUntil;
   const justLanded = () => Date.now() < st.landedUntil;
@@ -477,11 +526,16 @@ const Anim = (() => {
   }
 
   function startMoving() {
-    if (!st.mover) st.mover = setInterval(stepPawns, 150);
+    if (!st.mover) {
+      st.mover = setInterval(stepPawns, 130);
+      stepPawns(); // premier pas immédiat
+    }
   }
 
+  // Les dés roulent pendant que le pion part déjà : pas d'attente après le lancer.
   function rollDice(final) {
     st.rollingUntil = Date.now() + ROLL_MS;
+    startMoving();
     clearInterval(st.roller);
     st.roller = setInterval(() => {
       st.faces = [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
@@ -493,9 +547,8 @@ const Anim = (() => {
         st.faces = final;
         st.landedUntil = Date.now() + 400;
         render();
-        startMoving();
       }
-    }, 90);
+    }, 80);
   }
 
   let pendingCard = null;
@@ -565,8 +618,14 @@ const Anim = (() => {
       if (st.turnKey && EM.current(g).id === S.me && g.stage === "roll") banner("À toi de jouer !");
       st.turnKey = turnKey;
     }
-    if (!rolling() && g.players.some((p) => !p.bankrupt && st.shown[p.id] !== p.pos)) startMoving();
-    else if (!rolling() && !st.mover) showCard();
+    // Nouvelle proposition d'échange qui me concerne.
+    const tradeKey = g.trade ? JSON.stringify(g.trade) : null;
+    if (tradeKey !== st.tradeKey) {
+      if (st.tradeKey !== undefined && g.trade?.to === S.me) banner("Nouvelle proposition d'échange !");
+      st.tradeKey = tradeKey;
+    }
+    if (g.players.some((p) => !p.bankrupt && st.shown[p.id] !== p.pos)) startMoving();
+    else if (!st.mover) showCard();
   }
 
   function reset() {
@@ -615,6 +674,21 @@ const A = {
     const l = S.trade[list];
     S.trade[list] = l.includes(i) ? l.filter((x) => x !== i) : [...l, i];
     render();
+  },
+
+  // Argent de l'échange : +/− (delta) ou valeur du curseur. Mise à jour sans tout redessiner
+  // pour que le curseur reste fluide.
+  tradeCash(list, delta, value) {
+    const g = S.game;
+    const max = list === "give" ? me().cash : EM.P(g, S.trade.to).cash;
+    const v = Math.max(0, Math.min(max, value ?? (S.trade[list + "Cash"] || 0) + delta));
+    S.trade[list + "Cash"] = v;
+    const label = document.getElementById("cash-" + list);
+    const range = document.getElementById("range-" + list);
+    const sum = document.getElementById("trade-sum");
+    if (label) label.textContent = money(v);
+    if (range && value === undefined) range.value = v;
+    if (sum) sum.innerHTML = tradeSummary();
   },
 
   propose() {
