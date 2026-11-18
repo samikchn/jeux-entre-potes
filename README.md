@@ -60,6 +60,17 @@ La clé anon est faite pour être publique : pas de souci à la mettre dans le r
 
 Les pages fonctionnent en ouvrant `index.html` dans un navigateur. Pour un vrai serveur local, n'importe lequel fait l'affaire, par exemple avec l'extension VS Code « Live Server ».
 
+## Tester
+
+Avec Node.js, sans rien installer, depuis la racine du projet :
+
+```
+node tests/parties-automatiques.js . 300
+node tests/liste-salons.js .
+```
+
+Le premier joue des centaines de parties au hasard sur les trois jeux (robots, abandons, actions invalides) et signale tout plantage ou blocage ; le second vérifie l'affichage de la liste des salons.
+
 ## Organisation du code
 
 ```

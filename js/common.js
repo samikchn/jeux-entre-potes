@@ -153,7 +153,10 @@ const Common = (() => {
   }
 
   function roomsView(rooms, { root = "", game = null } = {}) {
-    const list = rooms.filter((r) => GAMES[r.game] && (!game || r.game === game));
+    // La liste vient du réseau : on ne garde que les salons bien formés (code de 4 lettres, nombre
+    // de joueurs), pour que rien d'inattendu ne puisse se glisser dans la page.
+    const list = rooms.filter((r) => Object.prototype.hasOwnProperty.call(GAMES, r.game) && /^[A-Z]{4}$/.test(r.code) && (!game || r.game === game))
+      .map((r) => ({ ...r, players: Math.max(0, Math.floor(Number(r.players)) || 0) }));
     if (!list.length) return `<p class="muted" style="margin:0">Aucun salon ouvert pour l'instant.</p>`;
     const me = playerId();
     return list.map((r) => `

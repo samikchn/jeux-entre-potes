@@ -359,7 +359,7 @@ const LG = (() => {
     g.news = [];
     g.deaths = [];
     const p = id && P(g, id);
-    if (!p) {
+    if (!p || !p.alive) {
       g.news.push("Le village n'a éliminé personne.");
     } else if (p.role === "idiot" && !p.revealed && !g.powersLost) {
       p.revealed = true;

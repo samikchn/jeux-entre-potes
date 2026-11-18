@@ -70,7 +70,8 @@ const EM = (() => {
     if (p.cash >= amount) {
       p.cash -= amount;
       if (to === "pot") g.pot += amount;
-      else if (to) P(g, to).cash += amount;
+      // Créancier qui a fait faillite entre-temps : l'argent part à la banque, pas à un joueur éliminé.
+      else if (to && P(g, to) && !P(g, to).bankrupt) P(g, to).cash += amount;
       return true;
     }
     g.debt = { pid: p.id, amount, to, next };
@@ -299,7 +300,8 @@ const EM = (() => {
 
   function bid(g, p, amount, now) {
     const a = g.auction;
-    if (!a || p.bankrupt || amount <= a.bid || amount > p.cash) return;
+    // Un montant qui n'est pas un nombre (champ vide, texte…) cassait l'enchère en cours.
+    if (!a || p.bankrupt || !Number.isFinite(amount) || amount <= a.bid || amount > p.cash) return;
     a.bid = amount;
     a.bidder = p.id;
     a.endsAt = Math.max(a.endsAt, now + 5000);
@@ -322,7 +324,7 @@ const EM = (() => {
 
   function canBuild(g, pid, i) {
     const s = SPACES[i];
-    return s.type === "prop" && g.owners[i] === pid && ownsGroup(g, pid, s.group) && level(g, i) < 3;
+    return !!s && s.type === "prop" && g.owners[i] === pid && ownsGroup(g, pid, s.group) && level(g, i) < 3;
   }
 
   function build(g, p, i) {
@@ -333,7 +335,7 @@ const EM = (() => {
   }
 
   function sellLevel(g, p, i) {
-    if (g.owners[i] !== p.id || !level(g, i)) return;
+    if (!SPACES[i] || g.owners[i] !== p.id || !level(g, i)) return;
     g.levels[i]--;
     p.cash += SPACES[i].build / 2;
     log(g, `${p.name} revend une construction à ${SPACES[i].name} (+${SPACES[i].build / 2} €).`);
@@ -342,7 +344,7 @@ const EM = (() => {
   // Revendre un terrain à la banque : moitié prix, et seulement sans construction sur le groupe.
   function sellProp(g, p, i) {
     const s = SPACES[i];
-    if (g.owners[i] !== p.id) return;
+    if (!s || g.owners[i] !== p.id) return;
     if (s.type === "prop" && groupSpaces(s.group).some((j) => level(g, j))) return;
     delete g.owners[i];
     p.cash += s.price / 2;
@@ -367,7 +369,9 @@ const EM = (() => {
   function bankrupt(g, p) {
     const creditor = g.debt && g.debt.pid === p.id && g.debt.to && g.debt.to !== "pot" ? P(g, g.debt.to) : null;
     for (const i of owned(g, p.id)) {
-      p.cash += (level(g, i) * SPACES[i].build) / 2;
+      // Gares et services n'ont pas de prix de construction : sans le « || 0 », l'argent du joueur
+      // (puis celui de son créancier) devenait « NaN » et la partie était fichue.
+      p.cash += (level(g, i) * (SPACES[i].build || 0)) / 2;
       delete g.levels[i];
       if (creditor) g.owners[i] = creditor.id;
       else delete g.owners[i];
@@ -377,10 +381,15 @@ const EM = (() => {
     p.bankrupt = true;
     p.jail = 0;
     if (g.trade && (g.trade.from === p.id || g.trade.to === p.id)) g.trade = null;
-    g.pendingMove = null; // déplacement en attente (sortie de prison impayée) : annulé
     log(g, `${p.name} fait faillite${creditor ? ` : tout revient à ${creditor.name}` : ""}.`);
     const wasTurn = current(g).id === p.id;
-    g.debt = null;
+    // On n'efface que SA dette : avant, l'abandon d'un autre joueur effaçait la dette du joueur
+    // du tour, qui restait coincé à l'étape « dette » (et l'hôte plantait si c'était un robot).
+    if (g.debt && g.debt.pid === p.id) g.debt = null;
+    if (wasTurn) {
+      g.pendingMove = null; // déplacement en attente (sortie de prison impayée) : annulé
+      g.auction = null; // enchère lancée pendant son tour : annulée avec lui
+    }
     if (!checkEnd(g) && wasTurn) nextTurn(g);
   }
 
@@ -415,6 +424,7 @@ const EM = (() => {
     if (!winner) return false;
     g.winner = winner.id;
     g.stage = "end";
+    g.auction = g.debt = g.trade = null; // rien ne reste en suspens une fois la partie finie
     log(g, `${winner.name} gagne la partie avec ${netWorth(g, winner)} € de patrimoine !`);
     return true;
   }
@@ -423,6 +433,9 @@ const EM = (() => {
 
   // offer = { from, to, give: {props, cash}, get: {props, cash} }
   function tradeValid(g, t) {
+    // Offre mal formée (venue d'un téléphone avec une vieille version, par exemple) : refusée sans planter.
+    const side = (x) => x && Array.isArray(x.props) && x.props.every((i) => SPACES[i]) && Number.isFinite(x.cash);
+    if (!t || !side(t.give) || !side(t.get)) return false;
     const from = P(g, t.from);
     const to = P(g, t.to);
     if (!from || !to || from.bankrupt || to.bankrupt || from === to) return false;
@@ -590,6 +603,7 @@ const EM = (() => {
     const p = current(g);
     if (!p.bot) return false;
 
+    if (g.stage === "debt" && !g.debt) g.stage = "done"; // sécurité : étape « dette » sans dette
     if (g.stage === "debt") {
       // Vend d'abord les constructions, puis les terrains les moins chers.
       const built = owned(g, p.id).filter((i) => level(g, i)).sort((a, b) => SPACES[a].build - SPACES[b].build);
